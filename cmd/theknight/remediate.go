@@ -33,6 +33,11 @@ func newRemediateCmd() *cobra.Command {
 			ctx := cmd.Context()
 			out := cmd.OutOrStdout()
 			errOut := cmd.ErrOrStderr()
+			if createPR {
+				if _, _, err := parseRepo(repoFlag); err != nil {
+					return err
+				}
+			}
 
 			client, err := awsclient.New(ctx, profile, region)
 			if err != nil {
@@ -171,7 +176,9 @@ func parseRepo(repoFlag string) (owner, repo string, err error) {
 		return "", "", fmt.Errorf("--repo is required with --create-pr (format: owner/name)")
 	}
 	owner, repo, ok := strings.Cut(repoFlag, "/")
-	if !ok || owner == "" || repo == "" {
+	if !ok || owner == "" || repo == "" || strings.Contains(repo, "/") ||
+		strings.TrimSpace(owner) != owner || strings.TrimSpace(repo) != repo ||
+		strings.ContainsAny(owner+repo, " \t\r\n") {
 		return "", "", fmt.Errorf("--repo must be in owner/name format, got %q", repoFlag)
 	}
 	return owner, repo, nil
