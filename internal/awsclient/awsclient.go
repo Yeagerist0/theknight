@@ -9,6 +9,9 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/service/ec2"
+	"github.com/aws/aws-sdk-go-v2/service/iam"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
 )
 
 // Client holds the resolved AWS config used to construct per-service SDK
@@ -35,3 +38,13 @@ func New(ctx context.Context, profile, region string) (*Client, error) {
 
 	return &Client{Config: cfg, Region: region}, nil
 }
+
+// S3 constructs an S3 service client from the resolved config.
+func (c *Client) S3() *s3.Client { return s3.NewFromConfig(c.Config) }
+
+// IAM constructs an IAM service client from the resolved config. IAM is a
+// global service; the client ignores Config.Region.
+func (c *Client) IAM() *iam.Client { return iam.NewFromConfig(c.Config) }
+
+// EC2 constructs an EC2 service client from the resolved config.
+func (c *Client) EC2() *ec2.Client { return ec2.NewFromConfig(c.Config) }
