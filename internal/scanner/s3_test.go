@@ -123,17 +123,27 @@ func TestDiscoverS3_PrivateBucket(t *testing.T) {
 	}
 }
 
-func TestDiscoverS3_PartialFailureContinues(t *testing.T) {
+func TestDiscoverS3_PartialFailureStillReportsBucket(t *testing.T) {
 	fake := &fakeS3{
-		buckets: []types.Bucket{{Name: aws.String("broken-bucket")}},
-		aclErr:  errors.New("access denied"),
+		buckets:      []types.Bucket{{Name: aws.String("broken-bucket")}},
+		aclErr:       errors.New("access denied"),
+		policyPublic: map[string]bool{"broken-bucket": false},
+		blockEnabled: map[string]bool{"broken-bucket": true},
 	}
 
 	resources, err := discoverS3(context.Background(), fake)
 	if err == nil {
-		t.Fatal("discoverS3() error = nil, want non-nil")
+		t.Fatal("discoverS3() error = nil, want non-nil (the ACL call failed)")
 	}
-	if len(resources) != 0 {
-		t.Errorf("got %d resources, want 0", len(resources))
+	if len(resources) != 1 {
+		t.Fatalf("got %d resources, want 1 — a failure on one signal (ACL) shouldn't drop the whole bucket", len(resources))
+	}
+
+	r := resources[0]
+	if _, ok := r.Metadata["acl_public_read"]; ok {
+		t.Errorf("acl_public_read should be absent when the ACL call failed, got %v", r.Metadata["acl_public_read"])
+	}
+	if got := r.Metadata["public_access_block_enabled"]; got != true {
+		t.Errorf("public_access_block_enabled = %v, want true (that call succeeded independently of the ACL failure)", got)
 	}
 }
