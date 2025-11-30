@@ -18,6 +18,17 @@ func (s3PublicReadRule) Applies(r scanner.Resource) bool {
 	return r.Type == "aws_s3_bucket"
 }
 
+// A missing metadata key (the scanner couldn't collect that particular
+// signal for this bucket — see internal/scanner/s3.go) type-asserts to
+// Go's zero value, false, for every signal here. That default is
+// conservative in the direction that matters for a security scanner: an
+// unknown public_access_block_enabled reads as "not blocked", so a
+// confirmed-public ACL still fires; an unknown acl_public_read reads as
+// "not public via ACL", so it falls through to whatever the policy signal
+// says instead of masking it. The failure mode this can't fully avoid is a
+// false negative when every signal for a bucket is unknown at once — that
+// case is still visible to the operator via the warning discoverS3
+// surfaces, just not in the findings table.
 func (s3PublicReadRule) Evaluate(r scanner.Resource) (Finding, bool) {
 	if blocked, _ := r.Metadata["public_access_block_enabled"].(bool); blocked {
 		return Finding{}, false
