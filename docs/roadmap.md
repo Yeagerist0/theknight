@@ -19,11 +19,13 @@ Goal: a real, runnable tool. This is the portfolio artifact.
         sensitive port, or all ports via protocol `-1`
 - [ ] Severity scoring that accounts for exposure (public-facing weighted
       above internal-only)
-- [ ] `internal/remediate`: Terraform patch templates for the rules above,
-      keyed by `RemediationID`
-- [ ] `theknight remediate`: given a finding, render the Terraform diff and
-      an explanation (no PR creation yet — local diff output is enough for
-      MVP)
+- [x] `internal/remediate`: Terraform templates keyed by `RemediationID` —
+      `s3-block-public-access`, `iam-scope-actions` (points at IAM Access
+      Analyzer instead of guessing a minimal action set — no safe static
+      default exists), `sg-restrict-ingress-cidr`
+- [x] `theknight remediate`: scans, evaluates, and renders the Terraform +
+      explanation for every finding with a registered template (no PR
+      creation yet — stdout output is enough for MVP)
 - [ ] table/JSON output polish, `--severity` filter flag
 - [x] Tests against recorded/fixture AWS API responses (no live account
       needed to run CI) — fake `s3API`/`iamAPI`/`ec2API` implementations,
