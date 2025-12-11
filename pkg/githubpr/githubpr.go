@@ -12,6 +12,7 @@ package githubpr
 import (
 	"context"
 	"fmt"
+	"path"
 	"strings"
 	"time"
 
@@ -64,6 +65,11 @@ func FixFilePath(f rules.Finding) string {
 func (c *Client) CreatePR(ctx context.Context, owner, repo, baseBranch string, fixes []FileFix) (string, error) {
 	if len(fixes) == 0 {
 		return "", fmt.Errorf("no fixes to open a PR for")
+	}
+	for _, fix := range fixes {
+		if err := validateFilePath(fix.Path); err != nil {
+			return "", err
+		}
 	}
 	fixes = dedupePaths(fixes)
 
@@ -136,6 +142,15 @@ func (c *Client) CreatePR(ctx context.Context, owner, repo, baseBranch string, f
 	}
 
 	return pr.GetHTMLURL(), nil
+}
+
+func validateFilePath(p string) error {
+	if p == "" || p == "." || path.IsAbs(p) || path.Clean(p) != p || p == ".." ||
+		strings.HasPrefix(p, "../") || strings.Contains(p, "\\") ||
+		strings.ContainsAny(p, "\x00\r\n") {
+		return fmt.Errorf("invalid repository file path %q", p)
+	}
+	return nil
 }
 
 // dedupePaths returns fixes with Path made unique, preserving order.
