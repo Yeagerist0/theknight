@@ -63,6 +63,45 @@ go build -o theknight ./cmd/theknight
 Auth follows the standard AWS SDK credential chain (env vars, shared config
 profile via `--profile`, instance role, etc).
 
+## Testing
+
+Two tiers, on purpose:
+
+- `make test` — fast, no external dependencies. Discovery is tested
+  against hand-rolled fakes of the AWS SDK client interfaces
+  (`s3API`/`iamAPI`/`ec2API`); rule and remediation logic is tested
+  directly against `scanner.Resource`/`rules.Finding` fixtures. This is
+  what CI should run on every commit.
+- `make integration-test` — starts LocalStack in Docker, provisions real
+  S3/IAM/EC2 resources, and runs the actual `discoverS3`/`discoverIAM`/
+  `discoverSecurityGroups` functions against it. The fakes prove the
+  detection logic is correct; this proves the AWS SDK request/response
+  wiring — field names, pagination, URL-decoding policy documents — is
+  correct too. Neither tier is a substitute for the other: a fake can be
+  wrong about what AWS actually returns without any test catching it,
+  which is exactly the failure mode this tier exists to close.
+
+This tier caught two real things the fakes couldn't:
+
+1. **A production bug.** `discoverS3` used to abort a bucket's *entire*
+   metadata collection if any one of its three API calls failed. Against
+   real AWS that means a bucket where one IAM grant is narrower than the
+   others (`s3:GetBucketAcl` allowed, `s3:GetBucketPolicyStatus` denied,
+   say) would silently vanish from the scan instead of reporting what
+   could still be determined. Fixed to collect each signal independently.
+2. **A stale assumption in the test itself.** AWS has enabled S3 Block
+   Public Access by default on every new bucket since April 2023 — a
+   public ACL alone no longer makes a bucket reachable. The first version
+   of the "public bucket" integration test didn't account for that and
+   failed against LocalStack's (correct) emulation of it, which is exactly
+   the kind of drift between assumption and reality this tier exists to
+   surface before a customer's AWS account does.
+
+Pinned to `localstack/localstack:3.8.1` in the Makefile — newer LocalStack
+builds fail fast on startup with a license-activation error unless
+`LOCALSTACK_AUTH_TOKEN` is set, even for the core services this suite
+needs. 3.8.1 is confirmed to run with zero config.
+
 ## Architecture
 
 ```
@@ -70,10 +109,17 @@ cmd/theknight/        CLI entrypoint (cobra)
 internal/awsclient/   AWS SDK config/session resolution
 internal/scanner/     Resource discovery, normalized into scanner.Resource
 internal/rules/       Rule interface + registry; Evaluate() runs rules over resources
-internal/remediate/   Finding -> Terraform fix template mapping (not yet implemented)
+internal/remediate/   Terraform fix template registry; Generate() renders a Fix per Finding
 internal/report/      table/json output
-configs/rules/        Rule definitions (data-driven checks, once rules exist)
 ```
+
+Rules and remediation templates are Go code registered via `init()`, not
+data-driven config files — a rule is a `rules.Rule` implementation, a
+template is a function keyed by `RemediationID`. That trades "edit a YAML
+file to add a check" for real test coverage per rule/template; given the
+detection logic here is genuinely conditional (public access block state,
+JSON policy statement shape, per-port CIDR matching), that trade favors
+correctness over configurability at this stage.
 
 `scanner.Resource` is a normalized, provider-agnostic type — rules operate
 on it rather than raw AWS SDK structs, so a GCP or Azure scanner can plug
