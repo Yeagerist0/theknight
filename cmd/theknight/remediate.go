@@ -13,8 +13,9 @@ import (
 
 func newRemediateCmd() *cobra.Command {
 	var (
-		profile string
-		region  string
+		profile  string
+		region   string
+		severity string
 	)
 
 	cmd := &cobra.Command{
@@ -39,6 +40,15 @@ func newRemediateCmd() *cobra.Command {
 			}
 
 			findings := rules.Evaluate(resources)
+
+			if severity != "" {
+				min, err := rules.ParseSeverity(severity)
+				if err != nil {
+					return err
+				}
+				findings = rules.Filter(findings, min)
+			}
+
 			if len(findings) == 0 {
 				fmt.Fprintln(out, "no findings.")
 				return nil
@@ -67,6 +77,7 @@ func newRemediateCmd() *cobra.Command {
 
 	cmd.Flags().StringVar(&profile, "profile", "", "AWS named profile to use")
 	cmd.Flags().StringVar(&region, "region", "us-east-1", "AWS region to scan")
+	cmd.Flags().StringVar(&severity, "severity", "", "minimum severity to include: low|medium|high|critical (default: all)")
 
 	return cmd
 }
