@@ -67,7 +67,13 @@ build sequence.
 ```
 go build -o theknight ./cmd/theknight
 ./theknight scan --profile <aws-profile> --region us-east-1
+./theknight scan --profile <aws-profile> --severity critical    # only critical findings
+./theknight remediate --profile <aws-profile> --severity high   # high + critical, with fixes
 ```
+
+`--severity` is a threshold, not an exact match — `--severity high` shows
+high and critical, not just high. Same flag, same semantics, on both
+commands.
 
 Auth follows the standard AWS SDK credential chain (env vars, shared config
 profile via `--profile`, instance role, etc).
