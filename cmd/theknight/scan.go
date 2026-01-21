@@ -13,9 +13,10 @@ import (
 
 func newScanCmd() *cobra.Command {
 	var (
-		profile string
-		region  string
-		output  string
+		profile  string
+		region   string
+		output   string
+		severity string
 	)
 
 	cmd := &cobra.Command{
@@ -39,6 +40,14 @@ func newScanCmd() *cobra.Command {
 
 			findings := rules.Evaluate(resources)
 
+			if severity != "" {
+				min, err := rules.ParseSeverity(severity)
+				if err != nil {
+					return err
+				}
+				findings = rules.Filter(findings, min)
+			}
+
 			return report.Write(cmd.OutOrStdout(), output, findings)
 		},
 	}
@@ -46,6 +55,7 @@ func newScanCmd() *cobra.Command {
 	cmd.Flags().StringVar(&profile, "profile", "", "AWS named profile to use")
 	cmd.Flags().StringVar(&region, "region", "us-east-1", "AWS region to scan")
 	cmd.Flags().StringVar(&output, "output", "table", "output format: table|json")
+	cmd.Flags().StringVar(&severity, "severity", "", "minimum severity to include: low|medium|high|critical (default: all)")
 
 	return cmd
 }
