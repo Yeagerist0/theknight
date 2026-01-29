@@ -40,6 +40,14 @@ func New(ctx context.Context, profile, region string) (*Client, error) {
 }
 
 // S3 constructs an S3 service client from the resolved config.
+//
+// Deliberately no UsePathStyle override here: path-style addressing is
+// what an S3-compatible endpoint like LocalStack needs when accessed
+// directly on localhost, but it's the wrong default against real AWS —
+// virtual-hosted-style is what production accounts get. That tradeoff
+// means this client can't talk to LocalStack's S3 API directly (see
+// internal/scanner/integration_test.go, which builds its own path-style
+// client instead of going through this constructor).
 func (c *Client) S3() *s3.Client { return s3.NewFromConfig(c.Config) }
 
 // IAM constructs an IAM service client from the resolved config. IAM is a
