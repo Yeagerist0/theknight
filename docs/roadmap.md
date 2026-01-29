@@ -43,7 +43,13 @@ Goal: a real, runnable tool. This is the portfolio artifact.
       provisions real S3/IAM/EC2 resources against LocalStack and runs the
       actual discovery functions. `make integration-test` / CI can run
       this as a slower, Docker-gated tier alongside the fast fixture tests
-- [ ] README demo GIF or asciinema recording
+- [x] README demo GIF (`docs/assets/demo.gif`) — recorded with
+      asciinema + agg against the actual compiled binary pointed at
+      LocalStack via `AWS_ENDPOINT_URL` (works with zero code changes for
+      IAM/EC2; S3 needs path-style addressing LocalStack requires on
+      localhost, which the production S3 client intentionally doesn't set
+      — see the `s3.NewFromConfig` comment in `internal/awsclient` — so
+      the recording demos IAM + EC2 only, not S3)
 - [ ] S3 bucket policy document parsing (mirror what IAM discovery already
       does) so `s3-public-write` can also fire on policy-granted write
       access, not just ACL grants
