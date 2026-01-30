@@ -62,8 +62,15 @@ scoped to an AWS service or the same account. Two roles with an identical
 wildcard permission aren't the same risk if only one of them can be
 assumed from outside the account — the severity should say so.
 
-Not built yet: actual PR creation (remediate output goes to stdout, not a
-GitHub PR, until V1). See [docs/roadmap.md](docs/roadmap.md) for the full
+Findings are always sorted most-severe-first (`scan` and `remediate`
+alike), `--output json` uses proper camelCase field names instead of raw
+Go struct names, and the table's SEVERITY column is colorized when
+writing to a real terminal — auto-disabled for piped or redirected
+output, and respects `NO_COLOR`.
+
+**MVP is complete.** Not built yet: actual PR creation (remediate output
+goes to stdout, not a GitHub PR — that's V1). See
+[docs/roadmap.md](docs/roadmap.md) for the full
 build sequence.
 
 ## Usage
