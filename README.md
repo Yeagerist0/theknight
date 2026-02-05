@@ -89,6 +89,70 @@ commands.
 Auth follows the standard AWS SDK credential chain (env vars, shared config
 profile via `--profile`, instance role, etc).
 
+## Security
+
+**TheKnight is structurally read-only.** The `s3API`/`iamAPI`/`ec2API`
+interfaces in `internal/scanner` (the only place this codebase talks to
+AWS) declare nothing but `Get*`/`List*`/`Describe*` methods — no
+`Put`/`Delete`/`Create`/`Update`/`Authorize`/`Attach`. That's not a policy
+statement, it's the Go type signature every AWS call in this repo is
+forced through; a call to a mutating API wouldn't compile. The full list,
+and the minimal IAM policy it maps to if you want to run TheKnight under
+a scoped-down role instead of a broad read-only grant:
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [{
+    "Effect": "Allow",
+    "Action": [
+      "s3:ListAllMyBuckets",
+      "s3:GetBucketAcl",
+      "s3:GetBucketPolicy",
+      "s3:GetBucketPolicyStatus",
+      "s3:GetBucketPublicAccessBlock",
+      "iam:ListRoles",
+      "iam:ListAttachedRolePolicies",
+      "iam:ListRolePolicies",
+      "iam:GetRolePolicy",
+      "iam:GetPolicy",
+      "iam:GetPolicyVersion",
+      "ec2:DescribeSecurityGroups"
+    ],
+    "Resource": "*"
+  }]
+}
+```
+
+`theknight remediate` never runs `terraform apply` and never opens a PR
+(that's V1) — it prints Terraform to stdout for a human to read and
+apply. The remediation templates are deliberately conservative about
+this (see the IAM templates above) for the same reason: a tool asking to
+be trusted near production infrastructure shouldn't guess.
+
+That trust boundary is only as real as the string handling behind it,
+though — a resource name embedded unescaped into generated Terraform
+would be a real HCL-injection path regardless of how conservative the
+templates claim to be. Every AWS-returned name (bucket, role, policy,
+security group) gets `%q`-escaped before landing in generated output, not
+just interpolated with `%s`. This wasn't purely theoretical: EC2 security
+group names accept a much looser character set than S3 bucket names or
+IAM role/policy names — spaces and several punctuation characters AWS
+enforces but that LocalStack (this repo's own integration-test target)
+doesn't necessarily validate identically — and one `%s` slipped through
+in `internal/remediate/ec2.go`'s comment-line generation. A crafted group
+name containing an embedded quote and newline could break out of the `#`
+comment and inject a live top-level Terraform resource block that a
+reviewer skimming the diff might miss. Fixed, and
+`TestSGRestrictIngressCIDR_GroupNameIsEscaped` /
+`TestSGOpenIngressRule_GroupNameIsEscapedInDescription` assert against
+that exact payload so it can't regress silently.
+
+`govulncheck` runs clean — `go.mod` is pinned to a Go toolchain version
+with no known stdlib CVEs reachable through this codebase's actual call
+paths (Go's toolchain auto-management fetches it on `go build`/`go test`,
+no separate install step needed).
+
 ## Testing
 
 Two tiers, on purpose:
