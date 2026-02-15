@@ -11,10 +11,10 @@ package githubpr
 
 import (
 	"context"
+	"crypto/rand"
 	"fmt"
 	"path"
 	"strings"
-	"time"
 
 	"github.com/google/go-github/v75/github"
 
@@ -93,7 +93,12 @@ func (c *Client) CreatePR(ctx context.Context, owner, repo, baseBranch string, f
 	}
 	baseTreeSHA := baseCommit.GetTree().GetSHA()
 
-	branchName := fmt.Sprintf("theknight/fixes-%d", time.Now().Unix())
+	// Randomize the suffix so concurrent runs cannot collide in the same second.
+	var suffix [8]byte
+	if _, err := rand.Read(suffix[:]); err != nil {
+		return "", fmt.Errorf("generating branch name: %w", err)
+	}
+	branchName := fmt.Sprintf("theknight/fixes-%x", suffix)
 	if _, _, err := c.gh.Git.CreateRef(ctx, owner, repo, github.CreateRef{
 		Ref: "refs/heads/" + branchName,
 		SHA: baseCommitSHA,
