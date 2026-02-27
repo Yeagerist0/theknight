@@ -14,10 +14,10 @@ import (
 // resource. Rule evaluation operates on this type, not raw AWS SDK structs,
 // so that GCP/Azure support (V2) only requires a new scanner, not new rules.
 type Resource struct {
-	ID       string
-	Type     string
-	Region   string
-	Metadata map[string]any
+	ID       string         `json:"id"`
+	Type     string         `json:"type"`
+	Region   string         `json:"region"`
+	Metadata map[string]any `json:"metadata"`
 }
 
 // Discover enumerates resources across every service TheKnight currently
