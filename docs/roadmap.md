@@ -8,6 +8,15 @@ Goal: a real, runnable tool. This is the portfolio artifact.
 integration tested (LocalStack), and pushed. What's left for this repo is
 V1/V2, not MVP polish.
 
+**Security pass done 2026-07-17**: fixed a real HCL-injection path (EC2
+security group name interpolated unescaped into generated Terraform —
+see README's Security section), patched 5 stdlib CVEs via a Go toolchain
+bump (`govulncheck` clean), documented the read-only guarantee and
+minimal IAM policy. Not a one-time checkbox — any new AWS-returned string
+embedded in future rules/templates needs the same `%q` treatment, and
+`govulncheck ./...` is worth rerunning periodically as new stdlib CVEs
+get disclosed.
+
 - [x] `internal/scanner`: discovery for S3 buckets, IAM roles/policies, EC2
       security groups
 - [x] `internal/rules`: first rule set
