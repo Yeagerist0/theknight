@@ -18,7 +18,7 @@ func TestGenerate_UnknownRemediationID(t *testing.T) {
 	}
 }
 
-func TestTerraformIdent(t *testing.T) {
+func TestSafeIdent(t *testing.T) {
 	tests := []struct {
 		name string
 		want string
@@ -30,8 +30,8 @@ func TestTerraformIdent(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		if got := terraformIdent(tt.name); got != tt.want {
-			t.Errorf("terraformIdent(%q) = %q, want %q", tt.name, got, tt.want)
+		if got := SafeIdent(tt.name); got != tt.want {
+			t.Errorf("SafeIdent(%q) = %q, want %q", tt.name, got, tt.want)
 		}
 	}
 }
