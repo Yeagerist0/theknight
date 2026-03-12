@@ -3,7 +3,7 @@ package remediate
 import (
 	"fmt"
 
-	"github.com/Yeagerist0/theknight/internal/rules"
+	"github.com/Yeagerist0/theknight/pkg/rules"
 )
 
 func init() {
