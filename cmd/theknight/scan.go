@@ -5,10 +5,10 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/Yeagerist0/theknight/internal/awsclient"
 	"github.com/Yeagerist0/theknight/internal/report"
-	"github.com/Yeagerist0/theknight/internal/rules"
-	"github.com/Yeagerist0/theknight/internal/scanner"
+	"github.com/Yeagerist0/theknight/pkg/awsclient"
+	"github.com/Yeagerist0/theknight/pkg/rules"
+	"github.com/Yeagerist0/theknight/pkg/scanner"
 )
 
 func newScanCmd() *cobra.Command {
