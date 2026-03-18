@@ -1,6 +1,6 @@
 module github.com/Yeagerist0/theknight
 
-go 1.26.3
+go 1.26.5
 
 require (
 	github.com/aws/aws-sdk-go-v2 v1.42.1
