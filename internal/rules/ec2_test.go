@@ -1,6 +1,7 @@
 package rules
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/Yeagerist0/theknight/internal/scanner"
@@ -87,5 +88,39 @@ func TestSGOpenIngressRule_SeverityByExposure(t *testing.T) {
 				t.Errorf("Severity = %v, want %v", finding.Severity, tt.wantSeverity)
 			}
 		})
+	}
+}
+
+// TestSGOpenIngressRule_GroupNameIsEscapedInDescription guards against a
+// crafted security group name reaching Finding.Description unescaped.
+// Description is exposed verbatim via `theknight scan --output json`,
+// meant for downstream/programmatic consumption — an unescaped newline or
+// quote there is a smaller-blast-radius version of the same problem
+// internal/remediate/ec2.go's Terraform generation has (see that
+// package's TestSGRestrictIngressCIDR_GroupNameIsEscaped), so it gets the
+// same %q treatment and the same style of regression test.
+func TestSGOpenIngressRule_GroupNameIsEscapedInDescription(t *testing.T) {
+	malicious := "evil\"\nresource \"aws_iam_role_policy\" \"pwn\" {}"
+
+	r := scanner.Resource{
+		ID:   "sg-evil",
+		Type: "aws_security_group",
+		Metadata: map[string]any{
+			"group_name":         malicious,
+			"open_ingress_ports": []int32{22},
+			"open_all_ports":     false,
+		},
+	}
+
+	finding, ok := sgOpenIngressRule{}.Evaluate(r)
+	if !ok {
+		t.Fatal("Evaluate() matched = false, want true")
+	}
+
+	for line := range strings.SplitSeq(finding.Description, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, `resource "aws_iam_role_policy" "pwn"`) {
+			t.Fatalf("group_name broke out of its string context in Description:\n%s", finding.Description)
+		}
 	}
 }
