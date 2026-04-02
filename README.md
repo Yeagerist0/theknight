@@ -12,6 +12,11 @@ exposure-based severity weighting, not a coincidence. (Recording is
 against real LocalStack-provisioned resources through the actual compiled
 binary — see [Testing](#testing) for how.)
 
+`theknight remediate --create-pr` really does open a pull request — here's
+a [real one](https://github.com/Yeagerist0/theknight-pr-test/pull/1),
+opened by the compiled binary against a live GitHub repo, findings sorted
+critical-first, one file per fix, all in a single commit.
+
 ## What it does
 
 TheKnight scans an AWS account for the misconfigurations that cause most
@@ -68,10 +73,16 @@ Go struct names, and the table's SEVERITY column is colorized when
 writing to a real terminal — auto-disabled for piped or redirected
 output, and respects `NO_COLOR`.
 
-**MVP is complete.** Not built yet: actual PR creation (remediate output
-goes to stdout, not a GitHub PR — that's V1). See
-[docs/roadmap.md](docs/roadmap.md) for the full
-build sequence.
+**MVP is complete**, and the first slice of V1 landed on top of it:
+`theknight remediate --create-pr` opens a real pull request against a
+GitHub repo — one commit, one file per fix, via the GitHub REST API
+directly (no local git clone, no shelling out to `git`). It's PAT-based
+CLI usage today, not the hosted GitHub App the longer-term roadmap
+describes (that needs a hosted backend for OAuth/webhooks — see
+[docs/roadmap.md](docs/roadmap.md)), but it delivers the same real
+outcome: point it at a repo, get back an actual PR.
+
+See [docs/roadmap.md](docs/roadmap.md) for the full build sequence.
 
 ## Usage
 
@@ -80,6 +91,10 @@ go build -o theknight ./cmd/theknight
 ./theknight scan --profile <aws-profile> --region us-east-1
 ./theknight scan --profile <aws-profile> --severity critical    # only critical findings
 ./theknight remediate --profile <aws-profile> --severity high   # high + critical, with fixes
+
+# open a real PR instead of printing the fixes to stdout
+export GITHUB_TOKEN=<personal-access-token>  # Contents + Pull requests: write, on the target repo
+./theknight remediate --profile <aws-profile> --create-pr --repo owner/infra-repo
 ```
 
 `--severity` is a threshold, not an exact match — `--severity high` shows
@@ -87,7 +102,12 @@ high and critical, not just high. Same flag, same semantics, on both
 commands.
 
 Auth follows the standard AWS SDK credential chain (env vars, shared config
-profile via `--profile`, instance role, etc).
+profile via `--profile`, instance role, etc). `GITHUB_TOKEN` is read from
+the environment only — never pass it as a flag, same reasoning as AWS
+credentials never being a `--secret-key` flag: a flag value ends up in
+shell history and `ps aux` output. `--base-branch` overrides the target
+branch the PR opens against; left unset, it auto-detects the repo's
+default branch.
 
 ## Security
 
@@ -124,11 +144,21 @@ a scoped-down role instead of a broad read-only grant:
 }
 ```
 
-`theknight remediate` never runs `terraform apply` and never opens a PR
-(that's V1) — it prints Terraform to stdout for a human to read and
-apply. The remediation templates are deliberately conservative about
-this (see the IAM templates above) for the same reason: a tool asking to
-be trusted near production infrastructure shouldn't guess.
+`theknight remediate` never runs `terraform apply` and never merges
+anything — with `--create-pr` it opens a real pull request, but a PR is
+still just a proposal sitting in front of a human reviewer, not applied
+infrastructure. The `internal/githubpr` package only ever creates a new
+branch and a new PR; it has no code path that pushes to an existing
+branch, force-updates a ref, or touches any branch other than the one it
+just created. The remediation templates are conservative for the same
+reason (see the IAM templates above): a tool asking to be trusted near
+production infrastructure shouldn't guess.
+
+`--create-pr` needs a `GITHUB_TOKEN` scoped to Contents (write) and Pull
+requests (write) on the target repo — that's enough to create a branch,
+commit files, and open a PR, and nothing more; it can't merge the PR it
+opens, delete branches, or touch repo settings. Same credential-hygiene
+rule as AWS: read from the environment only, never a CLI flag.
 
 That trust boundary is only as real as the string handling behind it,
 though — a resource name embedded unescaped into generated Terraform
@@ -202,6 +232,20 @@ coverage calls the function directly against a real `PutBucketPolicy` /
 `discoverS3` path — LocalStack's own gap shouldn't get to veto testing
 code that doesn't depend on the gap.
 
+`internal/githubpr` has no LocalStack-equivalent self-hosted emulator to
+test against, so it uses the pattern go-github's own test suite uses
+instead: an `httptest.Server` with `Client.BaseURL` pointed at it,
+exercising the real `*github.Client` request/response encoding rather
+than a hand-rolled fake. That test suite caught its own real bug during
+development — a mock handler assumed `CreateCommit`'s wire format matched
+the public `Commit` struct's JSON tags, when go-github actually flattens
+`Tree`/`Parents` down to bare SHA strings before sending the request (see
+`git_commits.go`'s private `createCommit` type). For the actual "does
+this open a real PR" proof, there's no substitute for hitting real
+GitHub: `theknight remediate --create-pr` was run against a live
+throwaway repo with a real token, and the [resulting
+PR](https://github.com/Yeagerist0/theknight-pr-test/pull/1) is still up.
+
 ## Architecture
 
 ```
@@ -211,6 +255,7 @@ internal/scanner/     Resource discovery, normalized into scanner.Resource
 internal/rules/       Rule interface + registry; Evaluate() runs rules over resources
 internal/remediate/   Terraform fix template registry; Generate() renders a Fix per Finding
 internal/report/      table/json output
+internal/githubpr/    Opens a PR (branch + commit + PR) via the GitHub REST API
 ```
 
 Rules and remediation templates are Go code registered via `init()`, not
@@ -290,9 +335,11 @@ Terraform" job postings.
 ### MVP → V1 → V2
 
 - **MVP** (this repo, 4–6 weeks): AWS-only CLI scanner + risk engine +
-  remediation PR generator.
-- **V1**: hosted scheduled scanning, Slack/GitHub integration, pricing
-  page — a 2–3 month build on top of the MVP.
+  remediation PR generator. Done, including real GitHub PR creation via
+  CLI + personal access token.
+- **V1**: hosted scheduled scanning, a proper GitHub App (OAuth +
+  webhooks, replacing the PAT-based CLI flow) + Slack integration,
+  pricing page — a 2–3 month build on top of the MVP.
 - **V2**: multi-cloud (GCP next), compliance report exports for SOC 2
   auditors, policy-as-code layer for customer-authored rules.
 
