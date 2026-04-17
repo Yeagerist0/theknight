@@ -13,6 +13,7 @@ import (
 	"context"
 	"crypto/rand"
 	"fmt"
+	"html"
 	"path"
 	"strings"
 
@@ -228,7 +229,9 @@ func prBody(fixes []FileFix) string {
 	b.WriteString("| Severity | Rule | Resource | File |\n")
 	b.WriteString("| --- | --- | --- | --- |\n")
 	for _, f := range fixes {
-		fmt.Fprintf(&b, "| %s | `%s` | `%s` | `%s` |\n", f.Finding.Severity, f.Finding.RuleID, f.Finding.Resource.ID, f.Path)
+		fmt.Fprintf(&b, "| %s | <code>%s</code> | <code>%s</code> | <code>%s</code> |\n",
+			markdownCell(fmt.Sprint(f.Finding.Severity)), markdownCell(f.Finding.RuleID),
+			markdownCell(f.Finding.Resource.ID), markdownCell(f.Path))
 	}
 	var briefed bool
 	for _, f := range fixes {
@@ -239,7 +242,12 @@ func prBody(fixes []FileFix) string {
 			b.WriteString("\n### Reviewer briefings\n\nAI-assisted, and checked against each finding: a briefing is dropped if it adds an identifier or quote the finding does not contain, contradicts its severity, or claims exploitation. The fixes above are generated deterministically, not by a model.\n\n")
 			briefed = true
 		}
-		fmt.Fprintf(&b, "- `%s`: %s\n", f.Finding.Resource.ID, f.Briefing)
+		fmt.Fprintf(&b, "- <code>%s</code>: %s\n", markdownCell(f.Finding.Resource.ID), markdownCell(f.Briefing))
 	}
 	return b.String()
+}
+
+func markdownCell(s string) string {
+	s = strings.NewReplacer("\r", " ", "\n", " ").Replace(s)
+	return strings.ReplaceAll(html.EscapeString(s), "|", "&#124;")
 }
