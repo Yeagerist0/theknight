@@ -8,7 +8,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/Yeagerist0/theknight/internal/scanner"
+	"github.com/Yeagerist0/theknight/pkg/scanner"
 )
 
 type Severity string
