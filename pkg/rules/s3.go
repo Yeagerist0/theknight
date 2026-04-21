@@ -3,7 +3,7 @@ package rules
 import (
 	"fmt"
 
-	"github.com/Yeagerist0/theknight/internal/scanner"
+	"github.com/Yeagerist0/theknight/pkg/scanner"
 )
 
 func init() {

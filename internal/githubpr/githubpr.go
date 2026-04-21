@@ -18,7 +18,7 @@ import (
 	"github.com/google/go-github/v75/github"
 
 	"github.com/Yeagerist0/theknight/internal/remediate"
-	"github.com/Yeagerist0/theknight/internal/rules"
+	"github.com/Yeagerist0/theknight/pkg/rules"
 )
 
 // Client opens remediation PRs via the GitHub API.

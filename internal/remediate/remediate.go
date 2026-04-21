@@ -8,7 +8,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/Yeagerist0/theknight/internal/rules"
+	"github.com/Yeagerist0/theknight/pkg/rules"
 )
 
 // Fix is a rendered remediation for a single Finding: the reasoning a

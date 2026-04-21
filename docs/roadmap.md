@@ -17,9 +17,20 @@ embedded in future rules/templates needs the same `%q` treatment, and
 `govulncheck ./...` is worth rerunning periodically as new stdlib CVEs
 get disclosed.
 
-- [x] `internal/scanner`: discovery for S3 buckets, IAM roles/policies, EC2
+**Restructure, 2026-07-18**: moved `awsclient`/`scanner`/`rules` from
+`internal/` to `pkg/` (mechanical rename, no logic change). Found while
+starting the theknight-server hosted backend: Go's `internal/` visibility
+rule means a package there can only be imported by code inside the same
+module, so a *separate* repo/module (theknight-server) genuinely cannot
+import `theknight/internal/scanner` at all, not even as a declared
+dependency — the compiler rejects it. Since the whole open-core premise
+is the hosted backend reusing this detection logic rather than
+reimplementing it, this had to move. `remediate`/`report`/`githubpr`
+stay `internal/` since the backend doesn't need them yet.
+
+- [x] `pkg/scanner`: discovery for S3 buckets, IAM roles/policies, EC2
       security groups
-- [x] `internal/rules`: first rule set
+- [x] `pkg/rules`: first rule set
   - [x] `s3-public-read` — public bucket ACL or policy, unless a Public
         Access Block configuration restricts it
   - [x] `s3-public-write` — ACL grant, or a policy document Allow
@@ -67,7 +78,7 @@ get disclosed.
       needed to run CI) — fake `s3API`/`iamAPI`/`ec2API` implementations,
       42 test cases covering discovery, rule evaluation, and remediation
 - [x] Integration tests against real AWS API wiring (not just fakes) —
-      `internal/scanner/integration_test.go` (`//go:build integration`)
+      `pkg/scanner/integration_test.go` (`//go:build integration`)
       provisions real S3/IAM/EC2 resources against LocalStack and runs the
       actual discovery functions. `make integration-test` / CI can run
       this as a slower, Docker-gated tier alongside the fast fixture tests
@@ -76,10 +87,10 @@ get disclosed.
       LocalStack via `AWS_ENDPOINT_URL` (works with zero code changes for
       IAM/EC2; S3 needs path-style addressing LocalStack requires on
       localhost, which the production S3 client intentionally doesn't set
-      — see the `s3.NewFromConfig` comment in `internal/awsclient` — so
+      — see the `s3.NewFromConfig` comment in `pkg/awsclient` — so
       the recording demos IAM + EC2 only, not S3)
 - [x] S3 bucket policy document parsing — `bucketPolicyPermissions` in
-      `internal/scanner/s3.go`, mirroring the IAM policy parsing pattern.
+      `pkg/scanner/s3.go`, mirroring the IAM policy parsing pattern.
       `policy_public_read`/`policy_public_write` are only trusted on
       positive parsing evidence for write (never assumed — overclaiming
       impact is worse than underclaiming it); read falls back to the
