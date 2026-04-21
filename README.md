@@ -112,7 +112,7 @@ default branch.
 ## Security
 
 **TheKnight is structurally read-only.** The `s3API`/`iamAPI`/`ec2API`
-interfaces in `internal/scanner` (the only place this codebase talks to
+interfaces in `pkg/scanner` (the only place this codebase talks to
 AWS) declare nothing but `Get*`/`List*`/`Describe*` methods — no
 `Put`/`Delete`/`Create`/`Update`/`Authorize`/`Attach`. That's not a policy
 statement, it's the Go type signature every AWS call in this repo is
@@ -223,7 +223,7 @@ builds fail fast on startup with a license-activation error unless
 needs. 3.8.1 is confirmed to run with zero config.
 
 LocalStack Community also doesn't implement `GetBucketPolicyStatus`
-(`internal/scanner/s3.go`'s tests handle that explicitly rather than
+(`pkg/scanner/s3.go`'s tests handle that explicitly rather than
 silently passing around it — see `requireOnlyKnownLocalStackGap`). Since
 `bucketPolicyPermissions` (the S3 policy read/write parsing) is only
 reached once that call confirms a bucket is public, its integration
@@ -249,14 +249,24 @@ PR](https://github.com/Yeagerist0/theknight-pr-test/pull/1) is still up.
 ## Architecture
 
 ```
-cmd/theknight/        CLI entrypoint (cobra)
-internal/awsclient/   AWS SDK config/session resolution
-internal/scanner/     Resource discovery, normalized into scanner.Resource
-internal/rules/       Rule interface + registry; Evaluate() runs rules over resources
-internal/remediate/   Terraform fix template registry; Generate() renders a Fix per Finding
-internal/report/      table/json output
-internal/githubpr/    Opens a PR (branch + commit + PR) via the GitHub REST API
+cmd/theknight/         CLI entrypoint (cobra)
+pkg/awsclient/         AWS SDK config/session resolution
+pkg/scanner/           Resource discovery, normalized into scanner.Resource
+pkg/rules/             Rule interface + registry; Evaluate() runs rules over resources
+internal/remediate/    Terraform fix template registry; Generate() renders a Fix per Finding
+internal/report/       table/json output
+internal/githubpr/     Opens a PR (branch + commit + PR) via the GitHub REST API
 ```
+
+`awsclient`/`scanner`/`rules` live under `pkg/`, not `internal/`, on purpose:
+Go's `internal/` visibility rule means a package there can only be
+imported by code inside this same module — which would make the
+open-core story in [If this were a startup](#if-this-were-a-startup)
+false. The hosted backend (a separate repo, separate module) imports this
+module and calls `scanner.Discover`/`rules.Evaluate` directly rather than
+re-implementing detection logic; that only compiles because these three
+are `pkg/`. `remediate`/`report`/`githubpr` stay `internal/` — nothing
+outside this CLI needs them yet.
 
 Rules and remediation templates are Go code registered via `init()`, not
 data-driven config files — a rule is a `rules.Rule` implementation, a
