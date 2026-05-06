@@ -127,14 +127,32 @@ stay `internal/` since the backend doesn't need them yet.
       hosted backend and is tracked separately below. This is the
       CLI-only substitute that delivers the same user-visible outcome
       without one.
-- [ ] Scheduled scanning (cron-style, per connected AWS account)
+- [x] **Backend core (scheduled scanning, trend reporting, multi-account,
+      2026-07-19)** — a separate hosted-product repo,
+      [theknight-server](https://github.com/Yeagerist0/theknight-server),
+      depends on this repo's `pkg/awsclient` `pkg/scanner` `pkg/rules` as
+      a library (this is why the restructuring above happened — Go's
+      `internal/` visibility rule blocks a second module from importing
+      them at all). It adds: Postgres-backed multi-tenant orgs/API
+      keys/connected AWS accounts; per-account cron scheduling
+      (`robfig/cron`) that assumes each customer's IAM role via STS with
+      the standard external-ID confused-deputy mitigation; scan
+      persistence that reconciles findings across runs (first-seen /
+      resolved tracking, gated so a partial scan can never falsely
+      resolve something it didn't actually re-check); and a REST API
+      (account connect/list/scan-trigger, scan history, open findings,
+      mean-time-to-remediate) with every account-scoped route re-checking
+      org ownership so one org can't read or scan another's connected AWS
+      account by guessing an ID.
+      **Not done** (needs external account registrations only a human
+      can create, same reasoning as the GitHub PAT slice above): the
+      actual GitHub App OAuth/webhook flow, Slack alerting, and
+      billing — tracked below, unchanged.
 - [ ] GitHub App: OAuth installation + webhooks, so PR creation doesn't
       require each user to hold a personal access token (superseds the
-      CLI+PAT slice above once there's a hosted backend to run it from)
+      CLI+PAT slice above now that theknight-server exists to run it from)
 - [ ] Slack alerting on new critical/high findings
-- [ ] Historical trend report (findings over time, mean time-to-remediate)
 - [ ] Pricing page + usage-based billing on monitored resource count
-- [ ] Multi-account support (org-level, not just single profile)
 
 ## V2 — expand surface area
 
