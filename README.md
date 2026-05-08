@@ -86,6 +86,41 @@ outcome: point it at a repo, get back an actual PR.
 
 See [docs/roadmap.md](docs/roadmap.md) for the full build sequence.
 
+## AI briefing (optional)
+
+`theknight remediate --explain` adds a short reviewer briefing to each fix, written by an
+LLM and checked against the finding before it is used. The Terraform is always generated
+by the deterministic templates; the model never writes or edits it.
+
+A finding's strings come from the cloud account and are untrusted. A security group name
+can be 255 characters with spaces and `#` (AWS allows it), so it can read like an
+instruction. The model is told those strings are data, and `explain.Validate` rejects a
+briefing that adds an ARN, AWS id, IP/CIDR, account id or number the finding doesn't
+contain, quotes a name it doesn't contain, uses a different severity word, claims
+exploitation, dismisses the finding, or contains code, a link or a command. A rejected or
+failed briefing falls back to the template explanation, so the worst case is a plainer
+sentence, never a changed fix. In a PR the briefings sit in their own section, labelled
+AI-assisted.
+
+```
+export THEKNIGHT_LLM_API_KEY=...   # any OpenAI-compatible endpoint; env only, never a flag
+./theknight remediate --profile <aws-profile> --explain
+```
+
+`theknight explain-eval` attacks it through the security group name using the
+prompt-injection corpus from [prompt-injection-soc-telemetry](https://github.com/Yeagerist0/prompt-injection-soc-telemetry)
+(`testdata/injection_payloads.json`; 34 of its 66 payloads are valid AWS group names) and
+reports how often the model is steered, with Wilson intervals. `--dry-run` uses a
+deterministic stand-in so the harness runs with no key.
+
+**Not yet measured:** the live-model numbers. The first run was cut short by the free
+tier's request limit (HTTP 429 on 39 of 46 calls), so it produced no usable result and none
+is claimed here. What is tested today: the validator (accept and reject cases, including the
+steered outputs), prompt escaping, the fallback path, the client's retry and no-body-leak
+behaviour, and the PR body. The clean controls in the dry run found a real validator bug
+(an honest briefing that said "AWS account" was rejected as a shell command), now fixed with
+a regression test.
+
 ## Usage
 
 ```
