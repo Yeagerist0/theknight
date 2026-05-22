@@ -34,8 +34,12 @@ func newRemediateCmd() *cobra.Command {
 			out := cmd.OutOrStdout()
 			errOut := cmd.ErrOrStderr()
 			if createPR {
-				if _, _, err := parseRepo(repoFlag); err != nil {
+				owner, repo, err := parseRepo(repoFlag)
+				if err != nil {
 					return err
+				}
+				if os.Getenv("GITHUB_TOKEN") == "" {
+					return fmt.Errorf("--create-pr requires a GITHUB_TOKEN environment variable with write access to %s/%s", owner, repo)
 				}
 			}
 			var minSeverity rules.Severity
