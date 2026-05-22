@@ -1,0 +1,67 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  unit:
+    name: build, vet, unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - run: go build ./...
+      - run: go vet ./...
+
+      - name: gofmt
+        run: |
+          unformatted=$(gofmt -l .)
+          if [ -n "$unformatted" ]; then
+            echo "These files need gofmt:"; echo "$unformatted"; exit 1
+          fi
+
+      # No AWS account and no Docker needed: every discovery, rule, and
+      # remediation path is tested against hand-rolled fakes.
+      - run: go test -race ./...
+
+  integration:
+    name: integration tests (LocalStack)
+    runs-on: ubuntu-latest
+    services:
+      # Pinned below 4.x deliberately: newer LocalStack images fail fast
+      # with "License activation failed" when LOCALSTACK_AUTH_TOKEN is
+      # unset, even for the core S3/IAM/EC2 services this suite uses.
+      localstack:
+        image: localstack/localstack:3.8.1
+        ports:
+          - 4566:4566
+        options: >-
+          --health-cmd "curl -sf http://localhost:4566/_localstack/health || exit 1"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      # Exercises the real AWS SDK request/response wiring against an
+      # emulated backend, rather than the fakes the unit tier uses.
+      # The suite points itself at localhost:4566 with throwaway static
+      # credentials (see pkg/scanner/integration_test.go) — no AWS_* env
+      # vars are read, so none are set here.
+      - name: Integration tests
+        run: go test -tags=integration -v ./...
