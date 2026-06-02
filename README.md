@@ -148,9 +148,9 @@ default branch.
 
 ## Security
 
-**TheKnight is structurally read-only.** The `s3API`/`iamAPI`/`ec2API`
-interfaces in `pkg/scanner` (the only place this codebase talks to
-AWS) declare nothing but `Get*`/`List*`/`Describe*` methods — no
+**TheKnight is structurally read-only.** The `s3API`/`s3ControlAPI`/`stsAPI`/
+`iamAPI`/`ec2API` interfaces in `pkg/scanner` (the only place this codebase
+talks to AWS) declare nothing but `Get*`/`List*`/`Describe*` methods — no
 `Put`/`Delete`/`Create`/`Update`/`Authorize`/`Attach`. That's not a policy
 statement, it's the Go type signature every AWS call in this repo is
 forced through; a call to a mutating API wouldn't compile. The full list,
@@ -168,6 +168,8 @@ a scoped-down role instead of a broad read-only grant:
       "s3:GetBucketPolicy",
       "s3:GetBucketPolicyStatus",
       "s3:GetBucketPublicAccessBlock",
+      "s3:GetAccountPublicAccessBlock",
+      "sts:GetCallerIdentity",
       "iam:ListRoles",
       "iam:ListAttachedRolePolicies",
       "iam:ListRolePolicies",
@@ -180,6 +182,24 @@ a scoped-down role instead of a broad read-only grant:
   }]
 }
 ```
+
+`s3:GetAccountPublicAccessBlock` and `sts:GetCallerIdentity` exist because of
+a bug: the S3 rules originally only read each bucket's *own* Block Public
+Access configuration. AWS also lets an account set Block Public Access once,
+account-wide — the pattern AWS itself recommends over configuring it per
+bucket — and merges the two per flag, whichever source blocks a given
+dimension wins. A bucket with no PAB of its own, sitting under an account
+that has it fully enabled, is not publicly reachable even though its ACL or
+policy still nominally grants access. The scanner used to miss that merge
+entirely and would report such a bucket as a live public-read/public-write
+finding. It now resolves the caller's account id via STS once per scan and
+reads the account-level configuration via S3 Control, merging it with each
+bucket's own signal before deciding whether a public ACL or policy grant is
+actually reachable. `s3control.GetPublicAccessBlock` and
+`sts.GetCallerIdentity` failing (an unusual permission gap) degrades to
+treating the account-level setting as unconfirmed, the same conservative,
+non-fatal pattern every other discovery error in this scanner follows —
+it doesn't abort the scan.
 
 `theknight remediate` never runs `terraform apply` and never merges
 anything — with `--create-pr` it opens a real pull request, but a PR is
