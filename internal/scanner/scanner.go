@@ -1,9 +1,11 @@
-// Package scanner discovers AWS resources relevant to misconfiguration checks
-// (S3 buckets, IAM roles/policies, security groups) via the AWS APIs.
+// Package scanner discovers AWS resources relevant to misconfiguration
+// checks (S3 buckets, IAM roles, EC2 security groups) via the AWS APIs.
 package scanner
 
 import (
 	"context"
+	"errors"
+	"fmt"
 
 	"github.com/Yeagerist0/theknight/internal/awsclient"
 )
@@ -18,9 +20,33 @@ type Resource struct {
 	Metadata map[string]any
 }
 
-// Discover enumerates resources across the services TheKnight currently
-// understands. It fans out per-service and aggregates results.
+// Discover enumerates resources across every service TheKnight currently
+// understands. A failure in one service (e.g. missing IAM permissions)
+// doesn't abort the scan — its error is joined into the returned error and
+// discovery continues for the remaining services.
 func Discover(ctx context.Context, client *awsclient.Client) ([]Resource, error) {
-	// TODO: S3 buckets, IAM roles/policies, EC2 security groups.
-	return nil, nil
+	var (
+		resources []Resource
+		errs      []error
+	)
+
+	s3Resources, err := discoverS3(ctx, client.S3())
+	if err != nil {
+		errs = append(errs, fmt.Errorf("s3: %w", err))
+	}
+	resources = append(resources, s3Resources...)
+
+	iamResources, err := discoverIAM(ctx, client.IAM())
+	if err != nil {
+		errs = append(errs, fmt.Errorf("iam: %w", err))
+	}
+	resources = append(resources, iamResources...)
+
+	sgResources, err := discoverSecurityGroups(ctx, client.EC2(), client.Region)
+	if err != nil {
+		errs = append(errs, fmt.Errorf("ec2: %w", err))
+	}
+	resources = append(resources, sgResources...)
+
+	return resources, errors.Join(errs...)
 }
