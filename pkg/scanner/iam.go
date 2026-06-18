@@ -76,9 +76,23 @@ func discoverIAM(ctx context.Context, api iamAPI) ([]Resource, error) {
 
 // roleWildcardPermissions gathers every policy document attached to a role
 // (inline and managed) and checks each Allow statement for "Action": "*" or
-// "Resource": "*". A policy name is attributed to actionPolicies /
-// resourcePolicies independently, so a policy that only wildcards one of
-// the two never gets cited for the other.
+// "Resource": "*" -- or their negated equivalents, NotAction/NotResource.
+//
+// "NotAction": [...] on an Allow statement grants every action EXCEPT the
+// ones listed -- not a narrower, safer-looking set, but "almost all of
+// IAM" minus a short exclusion list. It reads as restrictive, which is
+// exactly why it's dangerous: a role with a 3-item NotAction exclusion
+// list and Resource: "*" has near-administrator access, and a check that
+// only looks for a literal "Action": "*" string would give it a clean
+// bill of health. NotResource is the same pattern for resources. Both are
+// treated as wildcard-equivalent here regardless of what's excluded,
+// because judging whether an exclusion list is "narrow enough to be safe"
+// is exactly the kind of guess this scanner's rules elsewhere refuse to
+// make (see pkg/rules/s3.go's Evaluate comment on the same tradeoff).
+//
+// A policy name is attributed to actionPolicies / resourcePolicies
+// independently, so a policy that only wildcards (or NotActions/
+// NotResources) one of the two never gets cited for the other.
 func roleWildcardPermissions(ctx context.Context, api iamAPI, roleName string) (hasAction, hasResource bool, actionPolicies, resourcePolicies []string, err error) {
 	docs, err := rolePolicyDocuments(ctx, api, roleName)
 	if err != nil {
@@ -96,11 +110,11 @@ func roleWildcardPermissions(ctx context.Context, api iamAPI, roleName string) (
 			if s.Effect != "Allow" {
 				continue
 			}
-			if containsWildcard(s.Action) {
+			if containsWildcard(s.Action) || len(s.NotAction) > 0 {
 				hasAction = true
 				actionMatched = true
 			}
-			if containsWildcard(s.Resource) {
+			if containsWildcard(s.Resource) || len(s.NotResource) > 0 {
 				hasResource = true
 				resourceMatched = true
 			}
@@ -295,10 +309,12 @@ func decodePolicyDocument(raw string) (string, error) {
 }
 
 type iamStatement struct {
-	Effect    string          `json:"Effect"`
-	Principal json.RawMessage `json:"Principal"`
-	Action    json.RawMessage `json:"Action"`
-	Resource  json.RawMessage `json:"Resource"`
+	Effect      string          `json:"Effect"`
+	Principal   json.RawMessage `json:"Principal"`
+	Action      json.RawMessage `json:"Action"`
+	Resource    json.RawMessage `json:"Resource"`
+	NotAction   json.RawMessage `json:"NotAction"`
+	NotResource json.RawMessage `json:"NotResource"`
 }
 
 // parsePolicyStatements handles the fact that a policy document's Statement
