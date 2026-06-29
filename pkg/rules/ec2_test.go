@@ -96,7 +96,7 @@ func TestSGOpenIngressRule_SeverityByExposure(t *testing.T) {
 // Description is exposed verbatim via `theknight scan --output json`,
 // meant for downstream/programmatic consumption — an unescaped newline or
 // quote there is a smaller-blast-radius version of the same problem
-// internal/remediate/ec2.go's Terraform generation has (see that
+// pkg/remediate/ec2.go's Terraform generation has (see that
 // package's TestSGRestrictIngressCIDR_GroupNameIsEscaped), so it gets the
 // same %q treatment and the same style of regression test.
 func TestSGOpenIngressRule_GroupNameIsEscapedInDescription(t *testing.T) {
