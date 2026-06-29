@@ -149,7 +149,7 @@ a scoped-down role instead of a broad read-only grant:
 `theknight remediate` never runs `terraform apply` and never merges
 anything — with `--create-pr` it opens a real pull request, but a PR is
 still just a proposal sitting in front of a human reviewer, not applied
-infrastructure. The `internal/githubpr` package only ever creates a new
+infrastructure. The `pkg/githubpr` package only ever creates a new
 branch and a new PR; it has no code path that pushes to an existing
 branch, force-updates a ref, or touches any branch other than the one it
 just created. The remediation templates are conservative for the same
@@ -172,7 +172,7 @@ group names accept a much looser character set than S3 bucket names or
 IAM role/policy names — spaces and several punctuation characters AWS
 enforces but that LocalStack (this repo's own integration-test target)
 doesn't necessarily validate identically — and one `%s` slipped through
-in `internal/remediate/ec2.go`'s comment-line generation. A crafted group
+in `pkg/remediate/ec2.go`'s comment-line generation. A crafted group
 name containing an embedded quote and newline could break out of the `#`
 comment and inject a live top-level Terraform resource block that a
 reviewer skimming the diff might miss. Fixed, and
@@ -234,7 +234,7 @@ coverage calls the function directly against a real `PutBucketPolicy` /
 `discoverS3` path — LocalStack's own gap shouldn't get to veto testing
 code that doesn't depend on the gap.
 
-`internal/githubpr` has no LocalStack-equivalent self-hosted emulator to
+`pkg/githubpr` has no LocalStack-equivalent self-hosted emulator to
 test against, so it uses the pattern go-github's own test suite uses
 instead: an `httptest.Server` with `Client.BaseURL` pointed at it,
 exercising the real `*github.Client` request/response encoding rather
@@ -255,9 +255,9 @@ cmd/theknight/         CLI entrypoint (cobra)
 pkg/awsclient/         AWS SDK config/session resolution
 pkg/scanner/           Resource discovery, normalized into scanner.Resource
 pkg/rules/             Rule interface + registry; Evaluate() runs rules over resources
-internal/remediate/    Terraform fix template registry; Generate() renders a Fix per Finding
+pkg/remediate/    Terraform fix template registry; Generate() renders a Fix per Finding
 internal/report/       table/json output
-internal/githubpr/     Opens a PR (branch + commit + PR) via the GitHub REST API
+pkg/githubpr/     Opens a PR (branch + commit + PR) via the GitHub REST API
 ```
 
 `awsclient`/`scanner`/`rules` live under `pkg/`, not `internal/`, on purpose:

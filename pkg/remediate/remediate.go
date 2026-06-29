@@ -47,7 +47,7 @@ var nonIdentChar = regexp.MustCompile(`[^a-zA-Z0-9_-]+`)
 
 // SafeIdent turns an arbitrary AWS-returned string into a string containing
 // only [a-zA-Z0-9_-], never starting with a digit. Used as a Terraform
-// local resource identifier here, and reused by internal/githubpr to build
+// local resource identifier here, and reused by pkg/githubpr to build
 // safe repo file paths from the same untrusted AWS names (an IAM role's
 // Resource.ID is a full ARN like "arn:aws:iam::111:role/deploy" — slashes
 // and colons included — so building a file path directly from it without
