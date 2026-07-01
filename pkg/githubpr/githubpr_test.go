@@ -278,6 +278,56 @@ func TestFixFilePath_SanitizesARNSlashesAndColons(t *testing.T) {
 	}
 }
 
+// TestDedupePaths_CollidingResourceNamesGetDistinctPaths is the regression
+// test for the gap this fix closes: remediate.SafeIdent collapses any run
+// of non-identifier characters to a single "_", so two distinct, both
+// AWS-valid resource names can produce the same file path -- a security
+// group named "db prod" and one named "db.prod" both become "db_prod".
+// Without this, two fixes would carry the identical Path, CreateTree would
+// receive two entries for it, and GitHub keeps one and silently drops the
+// other -- a real finding goes missing from the PR with no error anywhere.
+func TestDedupePaths_CollidingResourceNamesGetDistinctPaths(t *testing.T) {
+	mk := func(id, path string) FileFix {
+		return FileFix{
+			Path: path,
+			Fix: remediate.Fix{Finding: rules.Finding{
+				RuleID:   "sg-open-ingress",
+				Resource: scanner.Resource{ID: id, Type: "aws_security_group"},
+			}},
+		}
+	}
+	in := []FileFix{
+		mk("db prod", "theknight-fixes/sg-open-ingress-db_prod.tf"),
+		mk("db.prod", "theknight-fixes/sg-open-ingress-db_prod.tf"), // collides with the one above
+		mk("db.prod", "theknight-fixes/sg-open-ingress-db_prod.tf"), // collides with both above
+		mk("unrelated", "theknight-fixes/sg-open-ingress-unrelated.tf"),
+	}
+
+	out := dedupePaths(in)
+
+	if len(out) != len(in) {
+		t.Fatalf("dedupePaths() dropped entries: got %d, want %d", len(out), len(in))
+	}
+	seen := map[string]bool{}
+	for i, f := range out {
+		if seen[f.Path] {
+			t.Errorf("entry %d: Path %q collides with an earlier entry after dedup", i, f.Path)
+		}
+		seen[f.Path] = true
+	}
+	want := []string{
+		"theknight-fixes/sg-open-ingress-db_prod.tf",
+		"theknight-fixes/sg-open-ingress-db_prod-2.tf",
+		"theknight-fixes/sg-open-ingress-db_prod-3.tf",
+		"theknight-fixes/sg-open-ingress-unrelated.tf",
+	}
+	for i, w := range want {
+		if out[i].Path != w {
+			t.Errorf("entry %d: Path = %q, want %q", i, out[i].Path, w)
+		}
+	}
+}
+
 func briefedFix(briefing string) FileFix {
 	f := rules.Finding{RuleID: "sg-open-ingress", Severity: rules.SeverityCritical, Resource: scanner.Resource{ID: "sg-0a1b2c3d4e5f60718", Type: "aws_security_group"}}
 	return FileFix{Path: "fixes/sg.tf", Fix: remediate.Fix{Finding: f, Explanation: "template"}, Briefing: briefing}

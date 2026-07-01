@@ -36,7 +36,7 @@ func discoverSecurityGroups(ctx context.Context, api ec2API, region string) ([]R
 		}
 
 		for _, sg := range page.SecurityGroups {
-			openPorts, openAll := openIngress(sg.IpPermissions)
+			openPorts, openAll, ipv4Open, ipv6Open := openIngress(sg.IpPermissions)
 
 			resources = append(resources, Resource{
 				ID:     aws.ToString(sg.GroupId),
@@ -46,6 +46,14 @@ func discoverSecurityGroups(ctx context.Context, api ec2API, region string) ([]R
 					"group_name":         aws.ToString(sg.GroupName),
 					"open_ingress_ports": openPorts,
 					"open_all_ports":     openAll,
+					// Which address family actually carries the open rule(s):
+					// a security group can be reachable from the whole IPv4
+					// internet, the whole IPv6 internet, or both, via separate
+					// rules, and the fix differs (cidr_blocks vs
+					// ipv6_cidr_blocks in the remediation Terraform) -- see
+					// pkg/rules/ec2.go and pkg/remediate/ec2.go.
+					"ipv4_open": ipv4Open,
+					"ipv6_open": ipv6Open,
 				},
 			})
 		}
@@ -55,12 +63,14 @@ func discoverSecurityGroups(ctx context.Context, api ec2API, region string) ([]R
 }
 
 // openIngress reports which sensitive ports (and whether all ports) a
-// security group's ingress rules expose to 0.0.0.0/0 or ::/0.
-func openIngress(perms []types.IpPermission) (openPorts []int32, openAll bool) {
+// security group's ingress rules expose to 0.0.0.0/0 or ::/0, and which of
+// those two address families actually carries an open rule.
+func openIngress(perms []types.IpPermission) (openPorts []int32, openAll, ipv4Open, ipv6Open bool) {
 	seen := map[int32]bool{}
 
 	for _, perm := range perms {
-		if !hasOpenCIDR(perm) {
+		v4, v6 := hasOpenCIDR(perm)
+		if !v4 && !v6 {
 			continue
 		}
 
@@ -79,30 +89,48 @@ func openIngress(perms []types.IpPermission) (openPorts []int32, openAll bool) {
 		// hand-written rule might use for "the whole range" (0 or 1).
 		if aws.ToString(perm.IpProtocol) == "-1" || (from <= 1 && to >= 65535) {
 			openAll = true
+			ipv4Open, ipv6Open = ipv4Open || v4, ipv6Open || v6
 			continue
 		}
 
+		matched := false
 		for _, port := range sensitiveIngressPorts {
-			if port >= from && port <= to && !seen[port] {
-				seen[port] = true
-				openPorts = append(openPorts, port)
+			if port >= from && port <= to {
+				matched = true
+				if !seen[port] {
+					seen[port] = true
+					openPorts = append(openPorts, port)
+				}
 			}
+		}
+		if matched {
+			ipv4Open, ipv6Open = ipv4Open || v4, ipv6Open || v6
 		}
 	}
 
-	return openPorts, openAll
+	return openPorts, openAll, ipv4Open, ipv6Open
 }
 
-func hasOpenCIDR(perm types.IpPermission) bool {
+// hasOpenCIDR reports, separately, whether perm's ranges include the
+// IPv4-any CIDR (0.0.0.0/0) and/or the IPv6-any CIDR (::/0). A single rule
+// can list both (AWS lets one ingress permission carry both an IpRanges and
+// an Ipv6Ranges entry), and which one(s) actually apply changes both the
+// finding's description and which Terraform attribute (cidr_blocks vs
+// ipv6_cidr_blocks) the generated fix needs to touch -- collapsing this
+// into one bool previously meant every finding was described and remediated
+// as if only IPv4 was ever the open family, even when it wasn't.
+func hasOpenCIDR(perm types.IpPermission) (v4, v6 bool) {
 	for _, r := range perm.IpRanges {
 		if aws.ToString(r.CidrIp) == "0.0.0.0/0" {
-			return true
+			v4 = true
+			break
 		}
 	}
 	for _, r := range perm.Ipv6Ranges {
 		if aws.ToString(r.CidrIpv6) == "::/0" {
-			return true
+			v6 = true
+			break
 		}
 	}
-	return false
+	return v4, v6
 }
