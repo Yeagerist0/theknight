@@ -25,6 +25,7 @@ func newRootCmd() *cobra.Command {
 
 	root.AddCommand(newScanCmd())
 	root.AddCommand(newRemediateCmd())
+	root.AddCommand(newExplainEvalCmd())
 
 	return root
 }
