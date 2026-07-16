@@ -16,8 +16,8 @@ func TestIAMScopeActions(t *testing.T) {
 			ID:   "arn:aws:iam::123456789012:role/deploy-role",
 			Type: "aws_iam_role",
 			Metadata: map[string]any{
-				"role_name":         "deploy-role",
-				"wildcard_policies": []string{"AllowEverything"},
+				"role_name":                "deploy-role",
+				"action_wildcard_policies": []string{"AllowEverything"},
 			},
 		},
 	}
@@ -37,6 +37,39 @@ func TestIAMScopeActions(t *testing.T) {
 		t.Errorf("Terraform missing guidance toward Access Analyzer:\n%s", fix.Terraform)
 	}
 	if !strings.Contains(fix.Explanation, "AllowEverything") {
+		t.Errorf("Explanation missing policy name: %s", fix.Explanation)
+	}
+}
+
+func TestIAMScopeResources(t *testing.T) {
+	f := rules.Finding{
+		RuleID:        "iam-wildcard-resource",
+		RemediationID: "iam-scope-resources",
+		Resource: scanner.Resource{
+			ID:   "arn:aws:iam::123456789012:role/data-role",
+			Type: "aws_iam_role",
+			Metadata: map[string]any{
+				"role_name":                  "data-role",
+				"resource_wildcard_policies": []string{"FullAccess"},
+			},
+		},
+	}
+
+	fix, ok, err := Generate(f)
+	if err != nil {
+		t.Fatalf("Generate() error = %v", err)
+	}
+	if !ok {
+		t.Fatal("Generate() ok = false, want true")
+	}
+
+	if !strings.Contains(fix.Terraform, "data-role") {
+		t.Errorf("Terraform missing role name:\n%s", fix.Terraform)
+	}
+	if !strings.Contains(fix.Terraform, "Access Analyzer") {
+		t.Errorf("Terraform missing guidance toward Access Analyzer:\n%s", fix.Terraform)
+	}
+	if !strings.Contains(fix.Explanation, "FullAccess") {
 		t.Errorf("Explanation missing policy name: %s", fix.Explanation)
 	}
 }

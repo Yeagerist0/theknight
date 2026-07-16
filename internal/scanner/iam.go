@@ -41,7 +41,7 @@ func discoverIAM(ctx context.Context, api iamAPI) ([]Resource, error) {
 		for _, role := range page.Roles {
 			name := aws.ToString(role.RoleName)
 
-			hasAction, hasResource, matched, err := roleWildcardPermissions(ctx, api, name)
+			hasAction, hasResource, actionPolicies, resourcePolicies, err := roleWildcardPermissions(ctx, api, name)
 			if err != nil {
 				errs = append(errs, fmt.Errorf("role %s: %w", name, err))
 				continue
@@ -52,10 +52,11 @@ func discoverIAM(ctx context.Context, api iamAPI) ([]Resource, error) {
 				Type:   "aws_iam_role",
 				Region: "global",
 				Metadata: map[string]any{
-					"role_name":             name,
-					"has_wildcard_action":   hasAction,
-					"has_wildcard_resource": hasResource,
-					"wildcard_policies":     matched,
+					"role_name":                  name,
+					"has_wildcard_action":        hasAction,
+					"has_wildcard_resource":      hasResource,
+					"action_wildcard_policies":   actionPolicies,
+					"resource_wildcard_policies": resourcePolicies,
 				},
 			})
 		}
@@ -66,39 +67,44 @@ func discoverIAM(ctx context.Context, api iamAPI) ([]Resource, error) {
 
 // roleWildcardPermissions gathers every policy document attached to a role
 // (inline and managed) and checks each Allow statement for "Action": "*" or
-// "Resource": "*".
-func roleWildcardPermissions(ctx context.Context, api iamAPI, roleName string) (hasAction, hasResource bool, matchedPolicies []string, err error) {
+// "Resource": "*". A policy name is attributed to actionPolicies /
+// resourcePolicies independently, so a policy that only wildcards one of
+// the two never gets cited for the other.
+func roleWildcardPermissions(ctx context.Context, api iamAPI, roleName string) (hasAction, hasResource bool, actionPolicies, resourcePolicies []string, err error) {
 	docs, err := rolePolicyDocuments(ctx, api, roleName)
 	if err != nil {
-		return false, false, nil, err
+		return false, false, nil, nil, err
 	}
 
 	for policyName, doc := range docs {
 		stmts, err := parsePolicyStatements(doc)
 		if err != nil {
-			return false, false, nil, fmt.Errorf("parsing policy %s: %w", policyName, err)
+			return false, false, nil, nil, fmt.Errorf("parsing policy %s: %w", policyName, err)
 		}
 
-		matched := false
+		actionMatched, resourceMatched := false, false
 		for _, s := range stmts {
 			if s.Effect != "Allow" {
 				continue
 			}
 			if containsWildcard(s.Action) {
 				hasAction = true
-				matched = true
+				actionMatched = true
 			}
 			if containsWildcard(s.Resource) {
 				hasResource = true
-				matched = true
+				resourceMatched = true
 			}
 		}
-		if matched {
-			matchedPolicies = append(matchedPolicies, policyName)
+		if actionMatched {
+			actionPolicies = append(actionPolicies, policyName)
+		}
+		if resourceMatched {
+			resourcePolicies = append(resourcePolicies, policyName)
 		}
 	}
 
-	return hasAction, hasResource, matchedPolicies, nil
+	return hasAction, hasResource, actionPolicies, resourcePolicies, nil
 }
 
 // rolePolicyDocuments returns every policy document (inline + attached

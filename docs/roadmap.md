@@ -6,31 +6,35 @@ Goal: a real, runnable tool. This is the portfolio artifact.
 
 - [x] `internal/scanner`: discovery for S3 buckets, IAM roles/policies, EC2
       security groups
-- [ ] `internal/rules`: first rule set
+- [x] `internal/rules`: first rule set
   - [x] `s3-public-read` — public bucket ACL or policy, unless a Public
         Access Block configuration restricts it
-  - [ ] `s3-public-write` — same signals, write permission (ACL/policy
-        detection already captures `acl_public_write`; just needs a rule)
+  - [x] `s3-public-write` — ACL-only signal (a public bucket *policy*
+        doesn't tell us read vs. write without parsing the policy
+        document, which the S3 scanner doesn't do yet — see note below)
   - [x] `iam-wildcard-action` — `"Action": "*"` in an Allow statement,
         inline or attached managed policy
-  - [ ] `iam-wildcard-resource` — `"Resource": "*"` (scanner already
-        captures `has_wildcard_resource`; just needs a rule)
+  - [x] `iam-wildcard-resource` — `"Resource": "*"`, same policy sources
   - [x] `sg-open-ingress` — security group open to `0.0.0.0/0`/`::/0` on a
         sensitive port, or all ports via protocol `-1`
 - [ ] Severity scoring that accounts for exposure (public-facing weighted
       above internal-only)
 - [x] `internal/remediate`: Terraform templates keyed by `RemediationID` —
-      `s3-block-public-access`, `iam-scope-actions` (points at IAM Access
-      Analyzer instead of guessing a minimal action set — no safe static
-      default exists), `sg-restrict-ingress-cidr`
+      `s3-block-public-access` (covers both read and write findings),
+      `iam-scope-actions` / `iam-scope-resources` (both point at IAM
+      Access Analyzer instead of guessing a minimal action/resource set —
+      no safe static default exists for either), `sg-restrict-ingress-cidr`
 - [x] `theknight remediate`: scans, evaluates, and renders the Terraform +
       explanation for every finding with a registered template (no PR
       creation yet — stdout output is enough for MVP)
 - [ ] table/JSON output polish, `--severity` filter flag
 - [x] Tests against recorded/fixture AWS API responses (no live account
       needed to run CI) — fake `s3API`/`iamAPI`/`ec2API` implementations,
-      20 tests covering discovery + rule evaluation
+      42 test cases covering discovery, rule evaluation, and remediation
 - [ ] README demo GIF or asciinema recording
+- [ ] S3 bucket policy document parsing (mirror what IAM discovery already
+      does) so `s3-public-write` can also fire on policy-granted write
+      access, not just ACL grants
 
 ## V1 — hosted product
 

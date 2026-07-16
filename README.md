@@ -26,25 +26,32 @@ the infra repo, reviewed and merged like any other change.
 ## Status
 
 Both commands are real. `theknight scan` discovers S3 buckets, IAM roles,
-and EC2 security groups against a live AWS account and evaluates three
-rules (`s3-public-read`, `iam-wildcard-action`, `sg-open-ingress`).
-`theknight remediate` runs the same scan and renders the Terraform fix +
-explanation for each finding — see `theknight remediate --help`. Discovery,
-rule evaluation, and remediation templates are all unit tested against
-fakes; no AWS account is needed to run `go test ./...`.
+and EC2 security groups against a live AWS account and evaluates five
+rules (`s3-public-read`, `s3-public-write`, `iam-wildcard-action`,
+`iam-wildcard-resource`, `sg-open-ingress`). `theknight remediate` runs the
+same scan and renders the Terraform fix + explanation for each finding —
+see `theknight remediate --help`. Discovery, rule evaluation, and
+remediation templates are all unit tested against fakes; no AWS account is
+needed to run `go test ./...`.
 
-The IAM template is deliberately conservative: it doesn't try to guess a
-minimal action set to replace a wildcard, since there's no static-analysis
-way to know what actions a role actually needs. It points at IAM Access
-Analyzer's CloudTrail-based policy generation instead of rendering a fix
-that looks confident but might be wrong — the S3 and security-group
-templates have a real safe default, this one doesn't.
+The two IAM templates are deliberately conservative: neither tries to
+guess a minimal action or resource set to replace a wildcard, since
+there's no static-analysis way to know what a role actually needs. Both
+point at IAM Access Analyzer's CloudTrail-based policy generation instead
+of rendering a fix that looks confident but might be wrong — the S3 and
+security-group templates have a real safe default, these don't.
 
-Not built yet: `s3-public-write` / `iam-wildcard-resource` rules (the
-underlying signals are already collected — see
-[docs/roadmap.md](docs/roadmap.md)), severity weighting by exposure, and
-actual PR creation (remediate output goes to stdout, not a GitHub PR, until
-V1). See [docs/roadmap.md](docs/roadmap.md) for the full build sequence.
+`s3-public-write` currently only fires off the bucket ACL — S3's
+`GetBucketPolicyStatus` says a bucket is public but not which permission a
+public *policy* grants, and the scanner doesn't parse S3 bucket policy
+documents yet (unlike IAM, where it does). A policy-driven public write
+would currently surface as `s3-public-read` instead — not silently missed,
+just filed under the sibling rule until policy-document parsing is added
+for S3 (tracked in [docs/roadmap.md](docs/roadmap.md)).
+
+Not built yet: severity weighting by exposure, and actual PR creation
+(remediate output goes to stdout, not a GitHub PR, until V1). See
+[docs/roadmap.md](docs/roadmap.md) for the full build sequence.
 
 ## Usage
 

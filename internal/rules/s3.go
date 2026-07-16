@@ -43,3 +43,39 @@ func (s3PublicReadRule) Evaluate(r scanner.Resource) (Finding, bool) {
 		RemediationID: "s3-block-public-access",
 	}, true
 }
+
+func init() {
+	Register(s3PublicWriteRule{})
+}
+
+type s3PublicWriteRule struct{}
+
+func (s3PublicWriteRule) ID() string { return "s3-public-write" }
+
+func (s3PublicWriteRule) Applies(r scanner.Resource) bool {
+	return r.Type == "aws_s3_bucket"
+}
+
+// s3PublicWriteRule only fires off the ACL signal. GetBucketPolicyStatus
+// reports whether a bucket is public at all, not which permission a public
+// policy grants, so a policy-driven public-write can't be distinguished
+// from policy-driven public-read with the data the scanner currently
+// collects.
+func (s3PublicWriteRule) Evaluate(r scanner.Resource) (Finding, bool) {
+	if blocked, _ := r.Metadata["public_access_block_enabled"].(bool); blocked {
+		return Finding{}, false
+	}
+
+	if aclPublic, _ := r.Metadata["acl_public_write"].(bool); !aclPublic {
+		return Finding{}, false
+	}
+
+	return Finding{
+		RuleID:        "s3-public-write",
+		Resource:      r,
+		Severity:      SeverityCritical,
+		Title:         "S3 bucket allows public write access",
+		Description:   fmt.Sprintf("Bucket %q grants public write access via its ACL and has no Public Access Block configuration restricting it. Anyone can upload or overwrite objects in this bucket.", r.ID),
+		RemediationID: "s3-block-public-access",
+	}, true
+}
