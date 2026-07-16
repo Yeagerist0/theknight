@@ -31,7 +31,10 @@ Goal: a real, runnable tool. This is the portfolio artifact.
 - [x] `theknight remediate`: scans, evaluates, and renders the Terraform +
       explanation for every finding with a registered template (no PR
       creation yet — stdout output is enough for MVP)
-- [ ] table/JSON output polish, `--severity` filter flag
+- [x] `--severity` filter flag on `scan` and `remediate` — threshold
+      filter (`--severity high` shows high and critical), backed by
+      `rules.Filter`/`rules.ParseSeverity`
+- [ ] table/JSON output polish
 - [x] Tests against recorded/fixture AWS API responses (no live account
       needed to run CI) — fake `s3API`/`iamAPI`/`ec2API` implementations,
       42 test cases covering discovery, rule evaluation, and remediation

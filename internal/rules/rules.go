@@ -3,7 +3,12 @@
 // groups, ...) and produces prioritized Findings.
 package rules
 
-import "github.com/Yeagerist0/theknight/internal/scanner"
+import (
+	"fmt"
+	"strings"
+
+	"github.com/Yeagerist0/theknight/internal/scanner"
+)
 
 type Severity string
 
@@ -13,6 +18,26 @@ const (
 	SeverityMedium   Severity = "medium"
 	SeverityLow      Severity = "low"
 )
+
+// severityRank orders severities low-to-high for threshold comparisons.
+// Higher rank means more severe.
+var severityRank = map[Severity]int{
+	SeverityLow:      0,
+	SeverityMedium:   1,
+	SeverityHigh:     2,
+	SeverityCritical: 3,
+}
+
+// ParseSeverity parses a case-insensitive severity name (as a user would
+// type it on the CLI) into a Severity, rejecting anything not in
+// severityRank.
+func ParseSeverity(s string) (Severity, error) {
+	sev := Severity(strings.ToLower(strings.TrimSpace(s)))
+	if _, ok := severityRank[sev]; !ok {
+		return "", fmt.Errorf("unknown severity %q (want one of: low, medium, high, critical)", s)
+	}
+	return sev, nil
+}
 
 // Finding is a single detected misconfiguration, tied back to the resource
 // it was found on and (eventually) a remediation template ID.
@@ -46,6 +71,26 @@ func Evaluate(resources []scanner.Resource) []Finding {
 		}
 	}
 	return findings
+}
+
+// Filter returns the findings whose Severity is at or above min. An
+// unrecognized Severity on a Finding (shouldn't happen with rules defined
+// in this package, but Finding.Severity isn't a closed type) is treated
+// as below every threshold, so it's excluded rather than risking a panic
+// or silently ranking above Critical.
+func Filter(findings []Finding, min Severity) []Finding {
+	minRank, ok := severityRank[min]
+	if !ok {
+		return findings
+	}
+
+	var filtered []Finding
+	for _, f := range findings {
+		if rank, ok := severityRank[f.Severity]; ok && rank >= minRank {
+			filtered = append(filtered, f)
+		}
+	}
+	return filtered
 }
 
 var registry []Rule
