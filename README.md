@@ -3,13 +3,14 @@
 Cloud misconfiguration scanner for AWS that doesn't just report — it opens
 the pull request that fixes it.
 
-```
-$ theknight scan --profile prod --region us-east-1
-SEVERITY   RULE                  RESOURCE                        TITLE
-critical   s3-public-read        my-app-uploads                  S3 bucket allows public read access
-critical   iam-wildcard-action   arn:aws:iam::111:role/ext-deploy IAM role grants wildcard action permissions
-high       sg-open-ingress       sg-0a1b2c3d                      Security group open to the internet on a sensitive port
-```
+![theknight scan, then scan --severity critical, then remediate — running against real AWS-API-compatible resources](docs/assets/demo.gif)
+
+The two IAM findings above are the *same* misconfiguration (`Action: "*"`)
+on two different roles — one gets `critical`, the other `high`, because
+only one of them can be assumed from outside the AWS account. That's the
+exposure-based severity weighting, not a coincidence. (Recording is
+against real LocalStack-provisioned resources through the actual compiled
+binary — see [Testing](#testing) for how.)
 
 ## What it does
 
