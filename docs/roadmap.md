@@ -4,14 +4,19 @@
 
 Goal: a real, runnable tool. This is the portfolio artifact.
 
-- [ ] `internal/scanner`: discovery for S3 buckets, IAM roles/policies, EC2
+- [x] `internal/scanner`: discovery for S3 buckets, IAM roles/policies, EC2
       security groups
 - [ ] `internal/rules`: first rule set
-  - [ ] `s3-public-read` / `s3-public-write` — public bucket ACL or policy
-  - [ ] `iam-wildcard-action` / `iam-wildcard-resource` — `"Action": "*"` or
-        `"Resource": "*"` in an attached policy
-  - [ ] `sg-open-ingress` — security group open to `0.0.0.0/0` on a
-        sensitive port (22, 3389, databases)
+  - [x] `s3-public-read` — public bucket ACL or policy, unless a Public
+        Access Block configuration restricts it
+  - [ ] `s3-public-write` — same signals, write permission (ACL/policy
+        detection already captures `acl_public_write`; just needs a rule)
+  - [x] `iam-wildcard-action` — `"Action": "*"` in an Allow statement,
+        inline or attached managed policy
+  - [ ] `iam-wildcard-resource` — `"Resource": "*"` (scanner already
+        captures `has_wildcard_resource`; just needs a rule)
+  - [x] `sg-open-ingress` — security group open to `0.0.0.0/0`/`::/0` on a
+        sensitive port, or all ports via protocol `-1`
 - [ ] Severity scoring that accounts for exposure (public-facing weighted
       above internal-only)
 - [ ] `internal/remediate`: Terraform patch templates for the rules above,
@@ -20,8 +25,9 @@ Goal: a real, runnable tool. This is the portfolio artifact.
       an explanation (no PR creation yet — local diff output is enough for
       MVP)
 - [ ] table/JSON output polish, `--severity` filter flag
-- [ ] Tests against recorded/fixture AWS API responses (no live account
-      needed to run CI)
+- [x] Tests against recorded/fixture AWS API responses (no live account
+      needed to run CI) — fake `s3API`/`iamAPI`/`ec2API` implementations,
+      20 tests covering discovery + rule evaluation
 - [ ] README demo GIF or asciinema recording
 
 ## V1 — hosted product

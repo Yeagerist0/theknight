@@ -17,11 +17,11 @@ const (
 // Finding is a single detected misconfiguration, tied back to the resource
 // it was found on and (eventually) a remediation template ID.
 type Finding struct {
-	RuleID       string
-	Resource     scanner.Resource
-	Severity     Severity
-	Title        string
-	Description  string
+	RuleID        string
+	Resource      scanner.Resource
+	Severity      Severity
+	Title         string
+	Description   string
 	RemediationID string
 }
 

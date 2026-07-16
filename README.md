@@ -5,10 +5,10 @@ the pull request that fixes it.
 
 ```
 $ theknight scan --profile prod --region us-east-1
-SEVERITY   RULE              RESOURCE                TITLE
-critical   s3-public-read    my-app-uploads          S3 bucket allows public read
-high       iam-wildcard      deploy-role             IAM role grants Action: "*"
-high       sg-open-ingress   sg-0a1b2c3d             Security group open to 0.0.0.0/0 on 22
+SEVERITY   RULE                  RESOURCE                        TITLE
+critical   s3-public-read        my-app-uploads                  S3 bucket allows public read access
+high       iam-wildcard-action   arn:aws:iam::111:role/deploy     IAM role grants wildcard action permissions
+high       sg-open-ingress       sg-0a1b2c3d                      Security group open to the internet on a sensitive port
 ```
 
 ## What it does
@@ -25,11 +25,17 @@ the infra repo, reviewed and merged like any other change.
 
 ## Status
 
-Early scaffold. `theknight scan` and `theknight remediate` exist as CLI
-commands with the plumbing in place (AWS auth, resource discovery, a rule
-registry, table/JSON output); the actual detection rules and the
-Terraform-patch generator are not written yet. See
-[docs/roadmap.md](docs/roadmap.md) for the build sequence.
+`theknight scan` is real: it discovers S3 buckets, IAM roles, and EC2
+security groups against a live AWS account and evaluates three rules
+(`s3-public-read`, `iam-wildcard-action`, `sg-open-ingress`). Discovery and
+rule evaluation are unit tested against fakes, no AWS account needed to run
+`go test ./...`.
+
+Not built yet: `s3-public-write` / `iam-wildcard-resource` rules (the
+underlying signals are already collected — see
+[docs/roadmap.md](docs/roadmap.md)), severity weighting by exposure, and
+the Terraform remediation generator (`theknight remediate` is still a
+stub). See [docs/roadmap.md](docs/roadmap.md) for the full build sequence.
 
 ## Usage
 
