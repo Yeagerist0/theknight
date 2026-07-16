@@ -31,14 +31,29 @@ func (iamWildcardActionRule) Evaluate(r scanner.Resource) (Finding, bool) {
 		roleName = r.ID
 	}
 
+	severity, exposureNote := exposureSeverity(r)
+
 	return Finding{
 		RuleID:        "iam-wildcard-action",
 		Resource:      r,
-		Severity:      SeverityHigh,
+		Severity:      severity,
 		Title:         "IAM role grants wildcard action permissions",
-		Description:   fmt.Sprintf("Role %q has an Allow statement with Action: \"*\" in policy %s.", roleName, strings.Join(policies, ", ")),
+		Description:   fmt.Sprintf("Role %q has an Allow statement with Action: \"*\" in policy %s.%s", roleName, strings.Join(policies, ", "), exposureNote),
 		RemediationID: "iam-scope-actions",
 	}, true
+}
+
+// exposureSeverity escalates a High wildcard finding to Critical when the
+// role's trust policy allows it to be assumed from outside the AWS
+// account (or by anyone) — see scanner's roleIsPubliclyAssumable. An
+// internally wildcarded role and a publicly assumable one are different
+// classes of risk, not just a matter of degree, so this isn't folded into
+// the wildcard check itself.
+func exposureSeverity(r scanner.Resource) (severity Severity, descriptionSuffix string) {
+	if external, _ := r.Metadata["publicly_assumable"].(bool); external {
+		return SeverityCritical, " This role's trust policy also allows it to be assumed from outside this AWS account (or by anyone), widening the impact beyond an internal misconfiguration."
+	}
+	return SeverityHigh, ""
 }
 
 func init() {
@@ -65,12 +80,14 @@ func (iamWildcardResourceRule) Evaluate(r scanner.Resource) (Finding, bool) {
 		roleName = r.ID
 	}
 
+	severity, exposureNote := exposureSeverity(r)
+
 	return Finding{
 		RuleID:        "iam-wildcard-resource",
 		Resource:      r,
-		Severity:      SeverityHigh,
+		Severity:      severity,
 		Title:         "IAM role grants wildcard resource permissions",
-		Description:   fmt.Sprintf("Role %q has an Allow statement with Resource: \"*\" in policy %s.", roleName, strings.Join(policies, ", ")),
+		Description:   fmt.Sprintf("Role %q has an Allow statement with Resource: \"*\" in policy %s.%s", roleName, strings.Join(policies, ", "), exposureNote),
 		RemediationID: "iam-scope-resources",
 	}, true
 }

@@ -7,7 +7,7 @@ the pull request that fixes it.
 $ theknight scan --profile prod --region us-east-1
 SEVERITY   RULE                  RESOURCE                        TITLE
 critical   s3-public-read        my-app-uploads                  S3 bucket allows public read access
-high       iam-wildcard-action   arn:aws:iam::111:role/deploy     IAM role grants wildcard action permissions
+critical   iam-wildcard-action   arn:aws:iam::111:role/ext-deploy IAM role grants wildcard action permissions
 high       sg-open-ingress       sg-0a1b2c3d                      Security group open to the internet on a sensitive port
 ```
 
@@ -49,9 +49,18 @@ would currently surface as `s3-public-read` instead — not silently missed,
 just filed under the sibling rule until policy-document parsing is added
 for S3 (tracked in [docs/roadmap.md](docs/roadmap.md)).
 
-Not built yet: severity weighting by exposure, and actual PR creation
-(remediate output goes to stdout, not a GitHub PR, until V1). See
-[docs/roadmap.md](docs/roadmap.md) for the full build sequence.
+Severity is weighted by real exposure, not just rule identity:
+`sg-open-ingress` is Critical for a protocol `-1` rule (every port
+reachable) and High for a specific sensitive port; `iam-wildcard-action` /
+`iam-wildcard-resource` are Critical when the role's trust policy allows
+assumption by a wildcard or cross-account principal, High when it's
+scoped to an AWS service or the same account. Two roles with an identical
+wildcard permission aren't the same risk if only one of them can be
+assumed from outside the account — the severity should say so.
+
+Not built yet: actual PR creation (remediate output goes to stdout, not a
+GitHub PR, until V1). See [docs/roadmap.md](docs/roadmap.md) for the full
+build sequence.
 
 ## Usage
 

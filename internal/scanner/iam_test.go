@@ -2,6 +2,7 @@ package scanner
 
 import (
 	"context"
+	"fmt"
 	"net/url"
 	"testing"
 
@@ -137,5 +138,92 @@ func TestDiscoverIAM_ScopedPolicyNoFinding(t *testing.T) {
 	}
 	if got := r.Metadata["has_wildcard_resource"]; got != false {
 		t.Errorf("has_wildcard_resource = %v, want false", got)
+	}
+}
+
+func TestDiscoverIAM_PublicAssumability(t *testing.T) {
+	const ownAccount = "111111111111"
+	const otherAccount = "222222222222"
+
+	tests := []struct {
+		name       string
+		trustDoc   string
+		wantPublic bool
+	}{
+		{
+			name:       "wildcard principal",
+			trustDoc:   `{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":"*","Action":"sts:AssumeRole"}]}`,
+			wantPublic: true,
+		},
+		{
+			name:       "wildcard AWS principal",
+			trustDoc:   `{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"AWS":"*"},"Action":"sts:AssumeRole"}]}`,
+			wantPublic: true,
+		},
+		{
+			name:       "cross-account AWS principal",
+			trustDoc:   fmt.Sprintf(`{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"AWS":"arn:aws:iam::%s:root"},"Action":"sts:AssumeRole"}]}`, otherAccount),
+			wantPublic: true,
+		},
+		{
+			name:       "federated principal",
+			trustDoc:   `{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"Federated":"arn:aws:iam::123456789012:saml-provider/Example"},"Action":"sts:AssumeRoleWithSAML"}]}`,
+			wantPublic: true,
+		},
+		{
+			name:       "same-account AWS principal",
+			trustDoc:   fmt.Sprintf(`{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"AWS":"arn:aws:iam::%s:role/other-role"},"Action":"sts:AssumeRole"}]}`, ownAccount),
+			wantPublic: false,
+		},
+		{
+			name:       "service principal",
+			trustDoc:   `{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"Service":"ec2.amazonaws.com"},"Action":"sts:AssumeRole"}]}`,
+			wantPublic: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			roleName := "test-role"
+			fake := &fakeIAM{
+				roles: []types.Role{
+					{
+						RoleName:                 aws.String(roleName),
+						Arn:                      aws.String("arn:aws:iam::" + ownAccount + ":role/" + roleName),
+						AssumeRolePolicyDocument: aws.String(url.QueryEscape(tt.trustDoc)),
+					},
+				},
+			}
+
+			resources, err := discoverIAM(context.Background(), fake)
+			if err != nil {
+				t.Fatalf("discoverIAM() error = %v", err)
+			}
+			if len(resources) != 1 {
+				t.Fatalf("got %d resources, want 1", len(resources))
+			}
+
+			if got := resources[0].Metadata["publicly_assumable"]; got != tt.wantPublic {
+				t.Errorf("publicly_assumable = %v, want %v", got, tt.wantPublic)
+			}
+		})
+	}
+}
+
+func TestAccountIDFromARN(t *testing.T) {
+	tests := []struct {
+		arn  string
+		want string
+	}{
+		{"arn:aws:iam::123456789012:role/deploy-role", "123456789012"},
+		{"arn:aws:iam::123456789012:root", "123456789012"},
+		{"not-an-arn", ""},
+		{"", ""},
+	}
+
+	for _, tt := range tests {
+		if got := accountIDFromARN(tt.arn); got != tt.want {
+			t.Errorf("accountIDFromARN(%q) = %q, want %q", tt.arn, got, tt.want)
+		}
 	}
 }

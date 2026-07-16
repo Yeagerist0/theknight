@@ -1,6 +1,7 @@
 package rules
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/Yeagerist0/theknight/internal/scanner"
@@ -105,5 +106,71 @@ func TestIAMWildcardResourceRule_Evaluate(t *testing.T) {
 				t.Errorf("Finding.RuleID = %q, want %q", finding.RuleID, "iam-wildcard-resource")
 			}
 		})
+	}
+}
+
+func TestExposureSeverity(t *testing.T) {
+	tests := []struct {
+		name         string
+		metadata     map[string]any
+		wantSeverity Severity
+		wantNoteText string
+	}{
+		{
+			name:         "not publicly assumable stays High",
+			metadata:     map[string]any{"publicly_assumable": false},
+			wantSeverity: SeverityHigh,
+			wantNoteText: "",
+		},
+		{
+			name:         "missing key defaults to High",
+			metadata:     map[string]any{},
+			wantSeverity: SeverityHigh,
+			wantNoteText: "",
+		},
+		{
+			name:         "publicly assumable escalates to Critical",
+			metadata:     map[string]any{"publicly_assumable": true},
+			wantSeverity: SeverityCritical,
+			wantNoteText: "outside this AWS account",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			r := scanner.Resource{Metadata: tt.metadata}
+			severity, note := exposureSeverity(r)
+			if severity != tt.wantSeverity {
+				t.Errorf("severity = %v, want %v", severity, tt.wantSeverity)
+			}
+			if tt.wantNoteText != "" && !strings.Contains(note, tt.wantNoteText) {
+				t.Errorf("note = %q, want it to contain %q", note, tt.wantNoteText)
+			}
+			if tt.wantNoteText == "" && note != "" {
+				t.Errorf("note = %q, want empty", note)
+			}
+		})
+	}
+}
+
+func TestIAMWildcardActionRule_PubliclyAssumableIsCritical(t *testing.T) {
+	rule := iamWildcardActionRule{}
+	r := scanner.Resource{
+		ID:   "arn:aws:iam::123456789012:role/dangerous-role",
+		Type: "aws_iam_role",
+		Metadata: map[string]any{
+			"has_wildcard_action":      true,
+			"action_wildcard_policies": []string{"AdminAccess"},
+			"role_name":                "dangerous-role",
+			"publicly_assumable":       true,
+		},
+	}
+
+	finding, ok := rule.Evaluate(r)
+	if !ok {
+		t.Fatal("Evaluate() matched = false, want true")
+	}
+	if finding.Severity != SeverityCritical {
+		t.Errorf("Severity = %v, want %v", finding.Severity, SeverityCritical)
 	}
 }

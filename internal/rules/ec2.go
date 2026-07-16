@@ -28,8 +28,15 @@ func (sgOpenIngressRule) Evaluate(r scanner.Resource) (Finding, bool) {
 
 	groupName, _ := r.Metadata["group_name"].(string)
 
+	// A protocol -1 rule exposes every port, not just the sensitive ones
+	// this scanner watches for — a strictly wider blast radius than any
+	// specific-port match, so it's weighted higher.
+	severity := SeverityHigh
+	title := "Security group open to the internet on a sensitive port"
 	desc := fmt.Sprintf("Security group %q (%s) allows ingress from 0.0.0.0/0", r.ID, groupName)
 	if openAll {
+		severity = SeverityCritical
+		title = "Security group open to the internet on all ports"
 		desc += " on all ports."
 	} else {
 		desc += fmt.Sprintf(" on sensitive ports %v.", openPorts)
@@ -38,8 +45,8 @@ func (sgOpenIngressRule) Evaluate(r scanner.Resource) (Finding, bool) {
 	return Finding{
 		RuleID:        "sg-open-ingress",
 		Resource:      r,
-		Severity:      SeverityHigh,
-		Title:         "Security group open to the internet on a sensitive port",
+		Severity:      severity,
+		Title:         title,
 		Description:   desc,
 		RemediationID: "sg-restrict-ingress-cidr",
 	}, true

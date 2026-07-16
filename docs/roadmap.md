@@ -17,8 +17,12 @@ Goal: a real, runnable tool. This is the portfolio artifact.
   - [x] `iam-wildcard-resource` — `"Resource": "*"`, same policy sources
   - [x] `sg-open-ingress` — security group open to `0.0.0.0/0`/`::/0` on a
         sensitive port, or all ports via protocol `-1`
-- [ ] Severity scoring that accounts for exposure (public-facing weighted
-      above internal-only)
+- [x] Severity scoring that accounts for exposure — `sg-open-ingress`:
+      Critical for protocol `-1` (all ports), High for a specific port;
+      `iam-wildcard-action`/`iam-wildcard-resource`: Critical when the
+      role's trust policy allows a wildcard or cross-account principal,
+      High when scoped to an AWS service or same account (account ID
+      derived from the role's own ARN, no extra STS call)
 - [x] `internal/remediate`: Terraform templates keyed by `RemediationID` —
       `s3-block-public-access` (covers both read and write findings),
       `iam-scope-actions` / `iam-scope-resources` (both point at IAM

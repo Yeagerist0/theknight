@@ -55,3 +55,37 @@ func TestSGOpenIngressRule_Evaluate(t *testing.T) {
 		})
 	}
 }
+
+func TestSGOpenIngressRule_SeverityByExposure(t *testing.T) {
+	rule := sgOpenIngressRule{}
+
+	tests := []struct {
+		name         string
+		metadata     map[string]any
+		wantSeverity Severity
+	}{
+		{
+			name:         "specific sensitive port is High",
+			metadata:     map[string]any{"open_ingress_ports": []int32{22}, "open_all_ports": false},
+			wantSeverity: SeverityHigh,
+		},
+		{
+			name:         "all ports open is Critical",
+			metadata:     map[string]any{"open_ingress_ports": []int32(nil), "open_all_ports": true},
+			wantSeverity: SeverityCritical,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			r := scanner.Resource{ID: "sg-123", Type: "aws_security_group", Metadata: tt.metadata}
+			finding, ok := rule.Evaluate(r)
+			if !ok {
+				t.Fatal("Evaluate() matched = false, want true")
+			}
+			if finding.Severity != tt.wantSeverity {
+				t.Errorf("Severity = %v, want %v", finding.Severity, tt.wantSeverity)
+			}
+		})
+	}
+}
