@@ -1,0 +1,37 @@
+package remediate
+
+import (
+	"testing"
+
+	"github.com/Yeagerist0/theknight/internal/rules"
+)
+
+func TestGenerate_UnknownRemediationID(t *testing.T) {
+	f := rules.Finding{RemediationID: "does-not-exist"}
+
+	_, ok, err := Generate(f)
+	if err != nil {
+		t.Fatalf("Generate() error = %v, want nil", err)
+	}
+	if ok {
+		t.Fatal("Generate() ok = true, want false for an unregistered RemediationID")
+	}
+}
+
+func TestTerraformIdent(t *testing.T) {
+	tests := []struct {
+		name string
+		want string
+	}{
+		{"deploy-role", "deploy-role"},
+		{"My SG!", "My_SG"},
+		{"", "resource"},
+		{"123-web", "_123-web"},
+	}
+
+	for _, tt := range tests {
+		if got := terraformIdent(tt.name); got != tt.want {
+			t.Errorf("terraformIdent(%q) = %q, want %q", tt.name, got, tt.want)
+		}
+	}
+}

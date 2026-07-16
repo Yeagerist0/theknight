@@ -29,9 +29,12 @@ func newScanCmd() *cobra.Command {
 				return fmt.Errorf("connecting to AWS: %w", err)
 			}
 
-			resources, err := scanner.Discover(ctx, client)
-			if err != nil {
-				return fmt.Errorf("discovering resources: %w", err)
+			resources, discoverErr := scanner.Discover(ctx, client)
+			if discoverErr != nil {
+				fmt.Fprintln(cmd.ErrOrStderr(), "warning: some resources could not be scanned:", discoverErr)
+			}
+			if len(resources) == 0 && discoverErr != nil {
+				return fmt.Errorf("discovering resources: %w", discoverErr)
 			}
 
 			findings := rules.Evaluate(resources)

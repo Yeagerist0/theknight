@@ -25,17 +25,26 @@ the infra repo, reviewed and merged like any other change.
 
 ## Status
 
-`theknight scan` is real: it discovers S3 buckets, IAM roles, and EC2
-security groups against a live AWS account and evaluates three rules
-(`s3-public-read`, `iam-wildcard-action`, `sg-open-ingress`). Discovery and
-rule evaluation are unit tested against fakes, no AWS account needed to run
-`go test ./...`.
+Both commands are real. `theknight scan` discovers S3 buckets, IAM roles,
+and EC2 security groups against a live AWS account and evaluates three
+rules (`s3-public-read`, `iam-wildcard-action`, `sg-open-ingress`).
+`theknight remediate` runs the same scan and renders the Terraform fix +
+explanation for each finding — see `theknight remediate --help`. Discovery,
+rule evaluation, and remediation templates are all unit tested against
+fakes; no AWS account is needed to run `go test ./...`.
+
+The IAM template is deliberately conservative: it doesn't try to guess a
+minimal action set to replace a wildcard, since there's no static-analysis
+way to know what actions a role actually needs. It points at IAM Access
+Analyzer's CloudTrail-based policy generation instead of rendering a fix
+that looks confident but might be wrong — the S3 and security-group
+templates have a real safe default, this one doesn't.
 
 Not built yet: `s3-public-write` / `iam-wildcard-resource` rules (the
 underlying signals are already collected — see
 [docs/roadmap.md](docs/roadmap.md)), severity weighting by exposure, and
-the Terraform remediation generator (`theknight remediate` is still a
-stub). See [docs/roadmap.md](docs/roadmap.md) for the full build sequence.
+actual PR creation (remediate output goes to stdout, not a GitHub PR, until
+V1). See [docs/roadmap.md](docs/roadmap.md) for the full build sequence.
 
 ## Usage
 

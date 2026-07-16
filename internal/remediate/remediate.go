@@ -1,20 +1,59 @@
-// Package remediate maps findings to verified Terraform fix templates and
-// (in V1) opens a PR against the customer's infra repo with the fix applied.
+// Package remediate maps findings to Terraform fix templates. Every
+// template renders HCL a reviewer still has to read and merge — nothing
+// here is ever applied automatically. That's a deliberate trust boundary,
+// not a missing feature (see README).
 package remediate
 
-import "github.com/Yeagerist0/theknight/internal/rules"
+import (
+	"regexp"
+	"strings"
 
-// Fix is a Terraform patch that resolves a Finding, plus the human-readable
-// explanation that goes in the PR description.
+	"github.com/Yeagerist0/theknight/internal/rules"
+)
+
+// Fix is a rendered remediation for a single Finding: the reasoning a
+// reviewer needs, plus the Terraform to apply it.
 type Fix struct {
 	Finding     rules.Finding
 	Explanation string
-	Diff        string
+	Terraform   string
 }
 
-// Generate looks up the remediation template for a finding and renders it
-// against the finding's resource attributes.
-func Generate(f rules.Finding) (Fix, error) {
-	// TODO: template lookup by f.RemediationID, HCL patch generation.
-	return Fix{}, nil
+type templateFunc func(rules.Finding) (Fix, error)
+
+var registry = map[string]templateFunc{}
+
+// register wires a template to the RemediationID that a rule sets on its
+// findings. Called from each template file's init().
+func register(remediationID string, fn templateFunc) {
+	registry[remediationID] = fn
+}
+
+// Generate renders the fix for a finding. ok is false when no template is
+// registered yet for the finding's RemediationID — that happens when a
+// rule ships before its matching template does, and is not itself an
+// error.
+func Generate(f rules.Finding) (fix Fix, ok bool, err error) {
+	tmpl, found := registry[f.RemediationID]
+	if !found {
+		return Fix{}, false, nil
+	}
+
+	fix, err = tmpl(f)
+	return fix, true, err
+}
+
+var nonIdentChar = regexp.MustCompile(`[^a-zA-Z0-9_-]+`)
+
+// terraformIdent turns an arbitrary AWS resource name into a valid
+// Terraform identifier, for use as a local resource name in generated HCL.
+func terraformIdent(name string) string {
+	ident := strings.Trim(nonIdentChar.ReplaceAllString(name, "_"), "_")
+	if ident == "" {
+		return "resource"
+	}
+	if ident[0] >= '0' && ident[0] <= '9' {
+		ident = "_" + ident
+	}
+	return ident
 }
