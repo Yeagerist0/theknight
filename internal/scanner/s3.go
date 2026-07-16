@@ -43,34 +43,43 @@ func discoverS3(ctx context.Context, api s3API) ([]Resource, error) {
 			continue
 		}
 
+		// Each signal is collected independently: a bucket where one of the
+		// three calls fails (a narrower IAM grant on just that action, an
+		// API not implemented by whatever's behind the s3API interface,
+		// ...) still gets reported with whatever metadata succeeded, rather
+		// than silently dropping the bucket from the scan entirely. Rules
+		// reading a missing key get Go's zero value (false) for that
+		// signal — see internal/rules/s3.go for why that default leans
+		// toward false positives over false negatives.
+		metadata := map[string]any{}
+
 		publicRead, publicWrite, err := bucketPublicACL(ctx, api, name)
 		if err != nil {
 			errs = append(errs, fmt.Errorf("bucket %s: acl: %w", name, err))
-			continue
+		} else {
+			metadata["acl_public_read"] = publicRead
+			metadata["acl_public_write"] = publicWrite
 		}
 
 		policyPublic, err := bucketPolicyPublic(ctx, api, name)
 		if err != nil {
 			errs = append(errs, fmt.Errorf("bucket %s: policy status: %w", name, err))
-			continue
+		} else {
+			metadata["policy_public"] = policyPublic
 		}
 
 		blocked, err := publicAccessBlockEnabled(ctx, api, name)
 		if err != nil {
 			errs = append(errs, fmt.Errorf("bucket %s: public access block: %w", name, err))
-			continue
+		} else {
+			metadata["public_access_block_enabled"] = blocked
 		}
 
 		resources = append(resources, Resource{
-			ID:     name,
-			Type:   "aws_s3_bucket",
-			Region: aws.ToString(b.BucketRegion),
-			Metadata: map[string]any{
-				"acl_public_read":             publicRead,
-				"acl_public_write":            publicWrite,
-				"policy_public":               policyPublic,
-				"public_access_block_enabled": blocked,
-			},
+			ID:       name,
+			Type:     "aws_s3_bucket",
+			Region:   aws.ToString(b.BucketRegion),
+			Metadata: metadata,
 		})
 	}
 
