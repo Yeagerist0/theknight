@@ -19,7 +19,7 @@ func sgRestrictIngressCIDR(f rules.Finding) (Fix, error) {
 	ident := terraformIdent(groupName)
 
 	if openAll {
-		tf := fmt.Sprintf(`# Security group %q (%s) allows all protocols and ports from 0.0.0.0/0
+		tf := fmt.Sprintf(`# Security group %q (%q) allows all protocols and ports from 0.0.0.0/0
 # via a protocol "-1" rule. There's no single safe replacement — split it
 # into explicit per-port rules scoped to a trusted CIDR, e.g.:
 #
@@ -36,7 +36,7 @@ func sgRestrictIngressCIDR(f rules.Finding) (Fix, error) {
 		return Fix{
 			Finding: f,
 			Explanation: fmt.Sprintf(
-				"Security group %q (%s) has a protocol -1 rule open to 0.0.0.0/0 — every port is reachable from the internet. There's no single safe replacement; it needs explicit per-port rules scoped to a trusted CIDR.",
+				"Security group %q (%q) has a protocol -1 rule open to 0.0.0.0/0 — every port is reachable from the internet. There's no single safe replacement; it needs explicit per-port rules scoped to a trusted CIDR.",
 				groupID, groupName,
 			),
 			Terraform: tf,
@@ -58,7 +58,7 @@ func sgRestrictIngressCIDR(f rules.Finding) (Fix, error) {
 	return Fix{
 		Finding: f,
 		Explanation: fmt.Sprintf(
-			"Security group %q (%s) allows ingress from 0.0.0.0/0 on port(s) %v. Restrict the source CIDR to a known, trusted range instead of the open internet.",
+			"Security group %q (%q) allows ingress from 0.0.0.0/0 on port(s) %v. Restrict the source CIDR to a known, trusted range instead of the open internet.",
 			groupID, groupName, openPorts,
 		),
 		Terraform: strings.Join(blocks, "\n\n") + "\n",

@@ -33,7 +33,7 @@ func (sgOpenIngressRule) Evaluate(r scanner.Resource) (Finding, bool) {
 	// specific-port match, so it's weighted higher.
 	severity := SeverityHigh
 	title := "Security group open to the internet on a sensitive port"
-	desc := fmt.Sprintf("Security group %q (%s) allows ingress from 0.0.0.0/0", r.ID, groupName)
+	desc := fmt.Sprintf("Security group %q (%q) allows ingress from 0.0.0.0/0", r.ID, groupName)
 	if openAll {
 		severity = SeverityCritical
 		title = "Security group open to the internet on all ports"
