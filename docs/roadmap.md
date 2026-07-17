@@ -4,6 +4,10 @@
 
 Goal: a real, runnable tool. This is the portfolio artifact.
 
+**MVP complete as of 2026-07-17.** Everything below is done, unit +
+integration tested (LocalStack), and pushed. What's left for this repo is
+V1/V2, not MVP polish.
+
 - [x] `internal/scanner`: discovery for S3 buckets, IAM roles/policies, EC2
       security groups
 - [x] `internal/rules`: first rule set
@@ -36,7 +40,17 @@ Goal: a real, runnable tool. This is the portfolio artifact.
 - [x] `--severity` filter flag on `scan` and `remediate` — threshold
       filter (`--severity high` shows high and critical), backed by
       `rules.Filter`/`rules.ParseSeverity`
-- [ ] table/JSON output polish
+- [x] table/JSON output polish — `rules.Evaluate` sorts findings
+      most-severe-first (stable, so same-severity findings keep their
+      discovery order); JSON gets proper camelCase field tags instead of
+      raw Go struct names (`ruleId` not `RuleID`) and always emits `[]`
+      for zero findings, never the bare JSON `null` a nil slice marshals
+      to by default (a real bug caught by testing against the live CLI,
+      not just decode-and-check-length unit tests, which silently accept
+      `null` for a slice target); table output prints `no findings.`
+      instead of a bare header row, and ANSI-colorizes the SEVERITY
+      column by severity when writing to a real terminal, respecting
+      `NO_COLOR` and auto-disabling for piped/redirected output
 - [x] Tests against recorded/fixture AWS API responses (no live account
       needed to run CI) — fake `s3API`/`iamAPI`/`ec2API` implementations,
       42 test cases covering discovery, rule evaluation, and remediation

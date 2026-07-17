@@ -5,6 +5,7 @@ package rules
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/Yeagerist0/theknight/internal/scanner"
@@ -42,12 +43,12 @@ func ParseSeverity(s string) (Severity, error) {
 // Finding is a single detected misconfiguration, tied back to the resource
 // it was found on and (eventually) a remediation template ID.
 type Finding struct {
-	RuleID        string
-	Resource      scanner.Resource
-	Severity      Severity
-	Title         string
-	Description   string
-	RemediationID string
+	RuleID        string           `json:"ruleId"`
+	Resource      scanner.Resource `json:"resource"`
+	Severity      Severity         `json:"severity"`
+	Title         string           `json:"title"`
+	Description   string           `json:"description"`
+	RemediationID string           `json:"remediationId"`
 }
 
 // Rule inspects a single resource and returns a Finding if it matches.
@@ -57,7 +58,10 @@ type Rule interface {
 	Evaluate(r scanner.Resource) (Finding, bool)
 }
 
-// Evaluate runs every registered rule against every resource.
+// Evaluate runs every registered rule against every resource, returning
+// findings ordered most-severe first. The sort is stable, so findings of
+// equal severity keep their original resource/rule discovery order rather
+// than shuffling arbitrarily on every run.
 func Evaluate(resources []scanner.Resource) []Finding {
 	var findings []Finding
 	for _, r := range resources {
@@ -70,6 +74,11 @@ func Evaluate(resources []scanner.Resource) []Finding {
 			}
 		}
 	}
+
+	sort.SliceStable(findings, func(i, j int) bool {
+		return severityRank[findings[i].Severity] > severityRank[findings[j].Severity]
+	})
+
 	return findings
 }
 
