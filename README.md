@@ -42,13 +42,16 @@ point at IAM Access Analyzer's CloudTrail-based policy generation instead
 of rendering a fix that looks confident but might be wrong — the S3 and
 security-group templates have a real safe default, these don't.
 
-`s3-public-write` currently only fires off the bucket ACL — S3's
-`GetBucketPolicyStatus` says a bucket is public but not which permission a
-public *policy* grants, and the scanner doesn't parse S3 bucket policy
-documents yet (unlike IAM, where it does). A policy-driven public write
-would currently surface as `s3-public-read` instead — not silently missed,
-just filed under the sibling rule until policy-document parsing is added
-for S3 (tracked in [docs/roadmap.md](docs/roadmap.md)).
+`s3-public-write` fires off both the bucket ACL and the bucket policy: once
+`GetBucketPolicyStatus` confirms a bucket is public, the scanner parses the
+policy document itself (mirroring what it already does for IAM) to tell
+whether the public grant covers read, write, or both — a public
+read-via-policy bucket no longer gets misclassified as also publicly
+writable. The read/write split is only trusted when parsing succeeds;
+if the policy document can't be read for some other reason, read falls
+back to the generic "policy says public" signal (preserving prior
+behavior) but write is never assumed without positive evidence —
+overclaiming impact in a security report is worse than underclaiming it.
 
 Severity is weighted by real exposure, not just rule identity:
 `sg-open-ingress` is Critical for a protocol `-1` rule (every port
@@ -117,6 +120,16 @@ Pinned to `localstack/localstack:3.8.1` in the Makefile — newer LocalStack
 builds fail fast on startup with a license-activation error unless
 `LOCALSTACK_AUTH_TOKEN` is set, even for the core services this suite
 needs. 3.8.1 is confirmed to run with zero config.
+
+LocalStack Community also doesn't implement `GetBucketPolicyStatus`
+(`internal/scanner/s3.go`'s tests handle that explicitly rather than
+silently passing around it — see `requireOnlyKnownLocalStackGap`). Since
+`bucketPolicyPermissions` (the S3 policy read/write parsing) is only
+reached once that call confirms a bucket is public, its integration
+coverage calls the function directly against a real `PutBucketPolicy` /
+`GetBucketPolicy` round trip instead of going through the full
+`discoverS3` path — LocalStack's own gap shouldn't get to veto testing
+code that doesn't depend on the gap.
 
 ## Architecture
 

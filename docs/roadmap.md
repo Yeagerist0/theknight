@@ -9,9 +9,11 @@ Goal: a real, runnable tool. This is the portfolio artifact.
 - [x] `internal/rules`: first rule set
   - [x] `s3-public-read` — public bucket ACL or policy, unless a Public
         Access Block configuration restricts it
-  - [x] `s3-public-write` — ACL-only signal (a public bucket *policy*
-        doesn't tell us read vs. write without parsing the policy
-        document, which the S3 scanner doesn't do yet — see note below)
+  - [x] `s3-public-write` — ACL grant, or a policy document Allow
+        statement with a public Principal granting an `s3:Put*`/
+        `s3:Delete*`/`s3:*` action (parsed the same way IAM policy
+        documents are, once `GetBucketPolicyStatus` confirms the bucket
+        is public via policy at all)
   - [x] `iam-wildcard-action` — `"Action": "*"` in an Allow statement,
         inline or attached managed policy
   - [x] `iam-wildcard-resource` — `"Resource": "*"`, same policy sources
@@ -50,9 +52,17 @@ Goal: a real, runnable tool. This is the portfolio artifact.
       localhost, which the production S3 client intentionally doesn't set
       — see the `s3.NewFromConfig` comment in `internal/awsclient` — so
       the recording demos IAM + EC2 only, not S3)
-- [ ] S3 bucket policy document parsing (mirror what IAM discovery already
-      does) so `s3-public-write` can also fire on policy-granted write
-      access, not just ACL grants
+- [x] S3 bucket policy document parsing — `bucketPolicyPermissions` in
+      `internal/scanner/s3.go`, mirroring the IAM policy parsing pattern.
+      `policy_public_read`/`policy_public_write` are only trusted on
+      positive parsing evidence for write (never assumed — overclaiming
+      impact is worse than underclaiming it); read falls back to the
+      generic `policy_public` signal when parsing isn't possible,
+      preserving prior behavior. Integration-tested by calling
+      `bucketPolicyPermissions` directly against LocalStack, since the
+      normal `discoverS3` gate (`GetBucketPolicyStatus`) is a known
+      LocalStack Community gap that would otherwise block coverage of
+      code that doesn't actually depend on it
 
 ## V1 — hosted product
 

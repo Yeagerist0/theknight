@@ -29,7 +29,7 @@ func TestS3PublicReadRule_Evaluate(t *testing.T) {
 			name: "public via ACL",
 			metadata: map[string]any{
 				"acl_public_read":             true,
-				"policy_public":               false,
+				"policy_public_read":          false,
 				"public_access_block_enabled": false,
 			},
 			want: true,
@@ -38,7 +38,7 @@ func TestS3PublicReadRule_Evaluate(t *testing.T) {
 			name: "public via bucket policy",
 			metadata: map[string]any{
 				"acl_public_read":             false,
-				"policy_public":               true,
+				"policy_public_read":          true,
 				"public_access_block_enabled": false,
 			},
 			want: true,
@@ -47,7 +47,7 @@ func TestS3PublicReadRule_Evaluate(t *testing.T) {
 			name: "public but blocked by public access block",
 			metadata: map[string]any{
 				"acl_public_read":             true,
-				"policy_public":               true,
+				"policy_public_read":          true,
 				"public_access_block_enabled": true,
 			},
 			want: false,
@@ -56,7 +56,7 @@ func TestS3PublicReadRule_Evaluate(t *testing.T) {
 			name: "private bucket",
 			metadata: map[string]any{
 				"acl_public_read":             false,
-				"policy_public":               false,
+				"policy_public_read":          false,
 				"public_access_block_enabled": false,
 			},
 			want: false,
@@ -116,6 +116,25 @@ func TestS3PublicWriteRule_Evaluate(t *testing.T) {
 			name: "read-only bucket",
 			metadata: map[string]any{
 				"acl_public_write":            false,
+				"public_access_block_enabled": false,
+			},
+			want: false,
+		},
+		{
+			name: "public write via policy",
+			metadata: map[string]any{
+				"acl_public_write":            false,
+				"policy_public_write":         true,
+				"public_access_block_enabled": false,
+			},
+			want: true,
+		},
+		{
+			name: "public read via policy does not imply write",
+			metadata: map[string]any{
+				"acl_public_write":            false,
+				"policy_public_read":          true,
+				"policy_public_write":         false,
 				"public_access_block_enabled": false,
 			},
 			want: false,

@@ -105,6 +105,67 @@ func TestIntegration_DiscoverS3_PublicReadBucket(t *testing.T) {
 	}
 }
 
+// TestIntegration_BucketPolicyPermissions_ReadVsWrite tests
+// bucketPolicyPermissions directly against a real PutBucketPolicy /
+// GetBucketPolicy round trip on LocalStack, rather than going through
+// discoverS3. discoverS3 only calls bucketPolicyPermissions after
+// GetBucketPolicyStatus confirms a bucket is public — and LocalStack
+// Community doesn't implement GetBucketPolicyStatus (see
+// requireOnlyKnownLocalStackGap), so that gate can never open in this
+// environment. GetBucketPolicy itself works fine on LocalStack, so
+// calling the lower-level function directly still proves the actual JSON
+// parsing and action-matching logic runs correctly against a real IAM
+// policy document response, not just the fakes.
+func TestIntegration_BucketPolicyPermissions_ReadVsWrite(t *testing.T) {
+	ctx := context.Background()
+	client := s3.NewFromConfig(localstackAWSConfig(), func(o *s3.Options) {
+		o.UsePathStyle = true
+	})
+
+	tests := []struct {
+		name      string
+		action    string
+		wantRead  bool
+		wantWrite bool
+	}{
+		{"read-only policy", "s3:GetObject", true, false},
+		{"write-only policy", "s3:PutObject", false, true},
+		{"wildcard action policy", "s3:*", true, true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			bucket := testID("theknight-policy")
+			if _, err := client.CreateBucket(ctx, &s3.CreateBucketInput{Bucket: &bucket}); err != nil {
+				t.Fatalf("CreateBucket: %v", err)
+			}
+			t.Cleanup(func() {
+				client.DeleteBucketPolicy(ctx, &s3.DeleteBucketPolicyInput{Bucket: &bucket})
+				client.DeleteBucket(ctx, &s3.DeleteBucketInput{Bucket: &bucket})
+			})
+
+			policy := fmt.Sprintf(`{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":"*","Action":%q,"Resource":"arn:aws:s3:::%s/*"}]}`, tt.action, bucket)
+			if _, err := client.PutBucketPolicy(ctx, &s3.PutBucketPolicyInput{
+				Bucket: &bucket,
+				Policy: &policy,
+			}); err != nil {
+				t.Fatalf("PutBucketPolicy: %v", err)
+			}
+
+			grantsRead, grantsWrite, err := bucketPolicyPermissions(ctx, client, bucket)
+			if err != nil {
+				t.Fatalf("bucketPolicyPermissions() error = %v", err)
+			}
+			if grantsRead != tt.wantRead {
+				t.Errorf("grantsRead = %v, want %v", grantsRead, tt.wantRead)
+			}
+			if grantsWrite != tt.wantWrite {
+				t.Errorf("grantsWrite = %v, want %v", grantsWrite, tt.wantWrite)
+			}
+		})
+	}
+}
+
 func TestIntegration_DiscoverS3_PrivateBucketWithPublicAccessBlock(t *testing.T) {
 	ctx := context.Background()
 	client := s3.NewFromConfig(localstackAWSConfig(), func(o *s3.Options) {
