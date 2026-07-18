@@ -45,9 +45,14 @@ func Generate(f rules.Finding) (fix Fix, ok bool, err error) {
 
 var nonIdentChar = regexp.MustCompile(`[^a-zA-Z0-9_-]+`)
 
-// terraformIdent turns an arbitrary AWS resource name into a valid
-// Terraform identifier, for use as a local resource name in generated HCL.
-func terraformIdent(name string) string {
+// SafeIdent turns an arbitrary AWS-returned string into a string containing
+// only [a-zA-Z0-9_-], never starting with a digit. Used as a Terraform
+// local resource identifier here, and reused by internal/githubpr to build
+// safe repo file paths from the same untrusted AWS names (an IAM role's
+// Resource.ID is a full ARN like "arn:aws:iam::111:role/deploy" — slashes
+// and colons included — so building a file path directly from it without
+// this treatment is a path-safety problem, not just a display one).
+func SafeIdent(name string) string {
 	ident := strings.Trim(nonIdentChar.ReplaceAllString(name, "_"), "_")
 	if ident == "" {
 		return "resource"

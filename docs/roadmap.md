@@ -44,8 +44,11 @@ get disclosed.
       Access Analyzer instead of guessing a minimal action/resource set —
       no safe static default exists for either), `sg-restrict-ingress-cidr`
 - [x] `theknight remediate`: scans, evaluates, and renders the Terraform +
-      explanation for every finding with a registered template (no PR
-      creation yet — stdout output is enough for MVP)
+      explanation for every finding with a registered template to stdout
+      by default, or via `--create-pr` opens a real GitHub PR (see V1
+      below — this was originally scoped as stdout-only for MVP, pulled
+      forward once the CLI+PAT version turned out not to need any hosted
+      infrastructure)
 - [x] `--severity` filter flag on `scan` and `remediate` — threshold
       filter (`--severity high` shows high and critical), backed by
       `rules.Filter`/`rules.ParseSeverity`
@@ -89,9 +92,34 @@ get disclosed.
 
 ## V1 — hosted product
 
+- [x] **GitHub PR creation (CLI + PAT slice, 2026-07-17)** —
+      `internal/githubpr` opens a real PR via the GitHub REST API: one
+      new branch off the repo's default branch, one commit (blob+tree+
+      commit via the Git Data API, not N separate per-file commits), one
+      PR with a markdown table summarizing every finding. `--create-pr`
+      / `--repo` / `--base-branch` flags on `theknight remediate`;
+      `GITHUB_TOKEN` from the environment only, same reasoning as AWS
+      credentials never being a CLI flag. File paths run AWS-returned
+      resource IDs through `remediate.SafeIdent` (exported from the
+      Terraform-identifier sanitizer already built for the HCL-injection
+      fix) — an IAM Resource.ID is a full ARN with slashes and colons,
+      so building a repo path directly from it is a path-safety problem,
+      not just a display one. Tested against an `httptest.Server` +
+      `Client.BaseURL` override (go-github's own documented test
+      pattern — caught a real bug where a mock handler assumed
+      `CreateCommit`'s wire format matched the public `Commit` struct
+      instead of go-github's private flattened-to-SHA-strings format)
+      and verified against a real throwaway GitHub repo (PR:
+      https://github.com/Yeagerist0/theknight-pr-test/pull/1).
+      **Not done**: the actual GitHub App (OAuth install flow +
+      webhooks) this item originally specified — that still needs a
+      hosted backend and is tracked separately below. This is the
+      CLI-only substitute that delivers the same user-visible outcome
+      without one.
 - [ ] Scheduled scanning (cron-style, per connected AWS account)
-- [ ] GitHub App: opens the remediation PR directly against the customer's
-      infra repo instead of printing a local diff
+- [ ] GitHub App: OAuth installation + webhooks, so PR creation doesn't
+      require each user to hold a personal access token (superseds the
+      CLI+PAT slice above once there's a hosted backend to run it from)
 - [ ] Slack alerting on new critical/high findings
 - [ ] Historical trend report (findings over time, mean time-to-remediate)
 - [ ] Pricing page + usage-based billing on monitored resource count

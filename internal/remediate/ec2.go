@@ -16,7 +16,7 @@ func sgRestrictIngressCIDR(f rules.Finding) (Fix, error) {
 	groupName, _ := f.Resource.Metadata["group_name"].(string)
 	openAll, _ := f.Resource.Metadata["open_all_ports"].(bool)
 	openPorts, _ := f.Resource.Metadata["open_ingress_ports"].([]int32)
-	ident := terraformIdent(groupName)
+	ident := SafeIdent(groupName)
 
 	if openAll {
 		tf := fmt.Sprintf(`# Security group %q (%q) allows all protocols and ports from 0.0.0.0/0

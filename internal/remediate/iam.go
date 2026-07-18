@@ -28,7 +28,7 @@ func iamScopeActions(f rules.Finding) (Fix, error) {
 		policyName = "unknown"
 	}
 
-	ident := terraformIdent(roleName)
+	ident := SafeIdent(roleName)
 
 	tf := fmt.Sprintf(`# Policy %q on role %q grants "Action": "*". There's no safe way to
 # auto-derive the minimal action set from static analysis alone — use IAM
@@ -79,7 +79,7 @@ func iamScopeResources(f rules.Finding) (Fix, error) {
 		policyName = "unknown"
 	}
 
-	ident := terraformIdent(roleName)
+	ident := SafeIdent(roleName)
 
 	tf := fmt.Sprintf(`# Policy %q on role %q grants "Resource": "*" — the actions it allows can
 # target any resource in the account, not just the ones this role needs.
