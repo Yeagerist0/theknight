@@ -31,6 +31,11 @@ Goal: a real, runnable tool. This is the portfolio artifact.
 - [x] Tests against recorded/fixture AWS API responses (no live account
       needed to run CI) — fake `s3API`/`iamAPI`/`ec2API` implementations,
       42 test cases covering discovery, rule evaluation, and remediation
+- [x] Integration tests against real AWS API wiring (not just fakes) —
+      `internal/scanner/integration_test.go` (`//go:build integration`)
+      provisions real S3/IAM/EC2 resources against LocalStack and runs the
+      actual discovery functions. `make integration-test` / CI can run
+      this as a slower, Docker-gated tier alongside the fast fixture tests
 - [ ] README demo GIF or asciinema recording
 - [ ] S3 bucket policy document parsing (mirror what IAM discovery already
       does) so `s3-public-write` can also fire on policy-granted write
