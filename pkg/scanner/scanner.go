@@ -7,7 +7,7 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/Yeagerist0/theknight/internal/awsclient"
+	"github.com/Yeagerist0/theknight/pkg/awsclient"
 )
 
 // Resource is a normalized, provider-agnostic view of a scanned cloud

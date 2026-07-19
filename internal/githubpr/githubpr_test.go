@@ -12,8 +12,8 @@ import (
 	"github.com/google/go-github/v75/github"
 
 	"github.com/Yeagerist0/theknight/internal/remediate"
-	"github.com/Yeagerist0/theknight/internal/rules"
-	"github.com/Yeagerist0/theknight/internal/scanner"
+	"github.com/Yeagerist0/theknight/pkg/rules"
+	"github.com/Yeagerist0/theknight/pkg/scanner"
 )
 
 // newTestClient points a real *github.Client at an httptest.Server

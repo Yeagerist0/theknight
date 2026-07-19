@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/Yeagerist0/theknight/internal/rules"
+	"github.com/Yeagerist0/theknight/pkg/rules"
 )
 
 func init() {

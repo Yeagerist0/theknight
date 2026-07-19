@@ -3,7 +3,7 @@ package rules
 import (
 	"testing"
 
-	"github.com/Yeagerist0/theknight/internal/scanner"
+	"github.com/Yeagerist0/theknight/pkg/scanner"
 )
 
 func TestS3PublicReadRule_Applies(t *testing.T) {

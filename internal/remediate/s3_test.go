@@ -4,8 +4,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Yeagerist0/theknight/internal/rules"
-	"github.com/Yeagerist0/theknight/internal/scanner"
+	"github.com/Yeagerist0/theknight/pkg/rules"
+	"github.com/Yeagerist0/theknight/pkg/scanner"
 )
 
 func TestS3BlockPublicAccess(t *testing.T) {

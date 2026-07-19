@@ -10,7 +10,7 @@ import (
 
 	"golang.org/x/term"
 
-	"github.com/Yeagerist0/theknight/internal/rules"
+	"github.com/Yeagerist0/theknight/pkg/rules"
 )
 
 // Write renders findings in the requested format ("table" or "json") to w.

@@ -26,7 +26,7 @@ clean:
 # localstack-up/integration-test require Docker. Unit tests (`make test`)
 # never need it — this is a separate, slower tier that exercises real AWS
 # SDK request/response wiring against an emulated backend instead of the
-# hand-rolled fakes internal/scanner's unit tests use.
+# hand-rolled fakes pkg/scanner's unit tests use.
 #
 # Pinned below 4.x: newer LocalStack builds fail fast with "License
 # activation failed" when no LOCALSTACK_AUTH_TOKEN is set, even for the
@@ -55,7 +55,7 @@ localstack-down:
 	docker stop $(LOCALSTACK_CONTAINER) >/dev/null 2>&1 || true
 
 integration-test: localstack-up
-	go test -tags=integration ./internal/scanner/... -v; \
+	go test -tags=integration ./pkg/scanner/... -v; \
 	status=$$?; \
 	$(MAKE) localstack-down; \
 	exit $$status
