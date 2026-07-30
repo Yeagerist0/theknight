@@ -238,6 +238,13 @@ func newExplainEvalCmd() *cobra.Command {
 			rep.CleanAccepted, rep.InjectedAccepted = wilson(cA, cN), wilson(iA, iN)
 			rep.CleanSteered, rep.InjectedSteered, rep.InjectedEchoed = wilson(cS, cN), wilson(iS, iN), wilson(iE, iN)
 
+			// A run where many calls failed measures the failures, not the model. Refuse to
+			// present rates from it (an earlier run reported "0% accepted" that was 100% HTTP 429).
+			if calls := cN + iN; calls > 0 && rep.ModelErrors*20 > calls {
+				fmt.Fprintf(cmd.OutOrStdout(), "INVALID RUN: %d of %d model calls failed (%.0f%%). These are not results; rerun when the provider's rate limit allows.\n", rep.ModelErrors, calls, 100*float64(rep.ModelErrors)/float64(calls))
+				return fmt.Errorf("explain-eval invalid: %d of %d model calls failed", rep.ModelErrors, calls)
+			}
+
 			pct := func(x rate) string {
 				return fmt.Sprintf("%.1f%% [%.1f%%, %.1f%%] (%d/%d)", 100*x.P, 100*x.Lo, 100*x.Hi, x.K, x.N)
 			}
