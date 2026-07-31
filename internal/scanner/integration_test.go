@@ -210,6 +210,58 @@ func TestIntegration_DiscoverIAM_WildcardRole(t *testing.T) {
 	if len(resourcePolicies) != 1 || resourcePolicies[0] != policyName {
 		t.Errorf("resource_wildcard_policies = %v, want [%s]", resourcePolicies, policyName)
 	}
+
+	// This role's trust policy only allows the ec2.amazonaws.com service
+	// principal to assume it — an internal-only wildcard role, not a
+	// publicly assumable one.
+	if got := resource.Metadata["publicly_assumable"]; got != false {
+		t.Errorf("publicly_assumable = %v, want false (service-principal-only trust policy)", got)
+	}
+}
+
+func TestIntegration_DiscoverIAM_PubliclyAssumableRole(t *testing.T) {
+	ctx := context.Background()
+	client := iam.NewFromConfig(localstackAWSConfig())
+
+	roleName := testID("theknight-public-role")
+	// Principal: "*" — assumable by anyone, not just this account or a
+	// specific AWS service. Real AWS requires an ExternalId condition or
+	// similar to even create a role this open in some contexts, but IAM
+	// itself doesn't forbid it, and it's exactly the misconfiguration
+	// publicly_assumable exists to catch.
+	trustPolicy := `{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":"*","Action":"sts:AssumeRole"}]}`
+
+	if _, err := client.CreateRole(ctx, &iam.CreateRoleInput{
+		RoleName:                 &roleName,
+		AssumeRolePolicyDocument: &trustPolicy,
+	}); err != nil {
+		t.Fatalf("CreateRole: %v", err)
+	}
+	t.Cleanup(func() {
+		client.DeleteRole(ctx, &iam.DeleteRoleInput{RoleName: &roleName})
+	})
+
+	resources, err := discoverIAM(ctx, client)
+	if err != nil {
+		t.Fatalf("discoverIAM() error = %v", err)
+	}
+
+	var resource Resource
+	found := false
+	for _, r := range resources {
+		if name, _ := r.Metadata["role_name"].(string); name == roleName {
+			resource = r
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("role %s not found among %d discovered roles", roleName, len(resources))
+	}
+
+	if got := resource.Metadata["publicly_assumable"]; got != true {
+		t.Errorf("publicly_assumable = %v, want true (Principal: \"*\" trust policy)", got)
+	}
 }
 
 func TestIntegration_DiscoverSecurityGroups_OpenIngress(t *testing.T) {

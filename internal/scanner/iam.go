@@ -7,9 +7,11 @@ import (
 	"fmt"
 	"net/url"
 	"slices"
+	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/iam"
+	"github.com/aws/aws-sdk-go-v2/service/iam/types"
 )
 
 // iamAPI is the subset of *iam.Client that discoverIAM needs. Matching the
@@ -40,6 +42,7 @@ func discoverIAM(ctx context.Context, api iamAPI) ([]Resource, error) {
 
 		for _, role := range page.Roles {
 			name := aws.ToString(role.RoleName)
+			arn := aws.ToString(role.Arn)
 
 			hasAction, hasResource, actionPolicies, resourcePolicies, err := roleWildcardPermissions(ctx, api, name)
 			if err != nil {
@@ -47,8 +50,13 @@ func discoverIAM(ctx context.Context, api iamAPI) ([]Resource, error) {
 				continue
 			}
 
+			publiclyAssumable, err := roleIsPubliclyAssumable(role)
+			if err != nil {
+				errs = append(errs, fmt.Errorf("role %s: trust policy: %w", name, err))
+			}
+
 			resources = append(resources, Resource{
-				ID:     aws.ToString(role.Arn),
+				ID:     arn,
 				Type:   "aws_iam_role",
 				Region: "global",
 				Metadata: map[string]any{
@@ -57,6 +65,7 @@ func discoverIAM(ctx context.Context, api iamAPI) ([]Resource, error) {
 					"has_wildcard_resource":      hasResource,
 					"action_wildcard_policies":   actionPolicies,
 					"resource_wildcard_policies": resourcePolicies,
+					"publicly_assumable":         publiclyAssumable,
 				},
 			})
 		}
@@ -105,6 +114,111 @@ func roleWildcardPermissions(ctx context.Context, api iamAPI, roleName string) (
 	}
 
 	return hasAction, hasResource, actionPolicies, resourcePolicies, nil
+}
+
+// roleIsPubliclyAssumable reports whether a role's trust policy allows the
+// role to be assumed by a wildcard principal or by an AWS account other
+// than the role's own. Either widens the blast radius of an
+// over-permissioned role beyond an internal misconfiguration into
+// something an outside party (or any account) could directly exploit,
+// which is why rules use this to escalate severity rather than folding it
+// into the wildcard-action/resource checks themselves — an internally
+// wildcarded role and a publicly assumable wildcarded role are different
+// classes of risk.
+func roleIsPubliclyAssumable(role types.Role) (bool, error) {
+	trustDoc := aws.ToString(role.AssumeRolePolicyDocument)
+	if trustDoc == "" {
+		return false, nil
+	}
+
+	decoded, err := decodePolicyDocument(trustDoc)
+	if err != nil {
+		return false, err
+	}
+
+	stmts, err := parsePolicyStatements(decoded)
+	if err != nil {
+		return false, err
+	}
+
+	ownAccountID := accountIDFromARN(aws.ToString(role.Arn))
+	for _, s := range stmts {
+		if s.Effect != "Allow" {
+			continue
+		}
+		if principalIsExternal(s.Principal, ownAccountID) {
+			return true, nil
+		}
+	}
+
+	return false, nil
+}
+
+// principalIsExternal reports whether an IAM policy Principal element
+// grants access to a wildcard ("*") or to an AWS account other than
+// ownAccountID. A Service principal (e.g. ec2.amazonaws.com) is not
+// external — that's the normal, expected shape of an AWS-service-assumed
+// role. A Federated principal is treated as external: it represents an
+// identity provider outside IAM's own account boundary.
+func principalIsExternal(raw json.RawMessage, ownAccountID string) bool {
+	if len(raw) == 0 {
+		return false
+	}
+
+	// Principal: "*" — the whole element is the wildcard, not an object.
+	if slices.Contains(jsonStringList(raw), "*") {
+		return true
+	}
+
+	var p struct {
+		AWS       json.RawMessage `json:"AWS"`
+		Federated json.RawMessage `json:"Federated"`
+	}
+	if err := json.Unmarshal(raw, &p); err != nil {
+		return false
+	}
+
+	if len(p.Federated) > 0 {
+		return true
+	}
+
+	for _, v := range jsonStringList(p.AWS) {
+		if v == "*" {
+			return true
+		}
+		if id := accountIDFromARN(v); id != "" && id != ownAccountID {
+			return true
+		}
+		// A bare 12-digit account ID (not wrapped in an ARN) is valid here too.
+		if isAccountID(v) && v != ownAccountID {
+			return true
+		}
+	}
+
+	return false
+}
+
+// accountIDFromARN extracts the account ID segment from an ARN
+// (arn:partition:service:region:account-id:resource). Returns "" if arn
+// doesn't look like an ARN.
+func accountIDFromARN(arn string) string {
+	parts := strings.SplitN(arn, ":", 6)
+	if len(parts) < 5 || parts[0] != "arn" {
+		return ""
+	}
+	return parts[4]
+}
+
+func isAccountID(s string) bool {
+	if len(s) != 12 {
+		return false
+	}
+	for _, r := range s {
+		if r < '0' || r > '9' {
+			return false
+		}
+	}
+	return true
 }
 
 // rolePolicyDocuments returns every policy document (inline + attached
@@ -181,9 +295,10 @@ func decodePolicyDocument(raw string) (string, error) {
 }
 
 type iamStatement struct {
-	Effect   string          `json:"Effect"`
-	Action   json.RawMessage `json:"Action"`
-	Resource json.RawMessage `json:"Resource"`
+	Effect    string          `json:"Effect"`
+	Principal json.RawMessage `json:"Principal"`
+	Action    json.RawMessage `json:"Action"`
+	Resource  json.RawMessage `json:"Resource"`
 }
 
 // parsePolicyStatements handles the fact that a policy document's Statement
@@ -208,22 +323,30 @@ func parsePolicyStatements(doc string) ([]iamStatement, error) {
 	return []iamStatement{single}, nil
 }
 
-// containsWildcard handles Action/Resource fields that are either a single
-// string or an array of strings, per the IAM policy grammar.
-func containsWildcard(raw json.RawMessage) bool {
+// jsonStringList handles a JSON field that's either a single string or an
+// array of strings, per the common AWS policy grammar (Action, Resource,
+// Principal.AWS, ...). Returns nil if raw is neither shape (e.g. an
+// object, as Principal is when it's not just "*").
+func jsonStringList(raw json.RawMessage) []string {
 	if len(raw) == 0 {
-		return false
+		return nil
 	}
 
 	var single string
 	if err := json.Unmarshal(raw, &single); err == nil {
-		return single == "*"
+		return []string{single}
 	}
 
 	var list []string
 	if err := json.Unmarshal(raw, &list); err == nil {
-		return slices.Contains(list, "*")
+		return list
 	}
 
-	return false
+	return nil
+}
+
+// containsWildcard handles Action/Resource fields that are either a single
+// string or an array of strings, per the IAM policy grammar.
+func containsWildcard(raw json.RawMessage) bool {
+	return slices.Contains(jsonStringList(raw), "*")
 }
