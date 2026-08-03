@@ -1,5 +1,7 @@
 # TheKnight
 
+[![ci](https://github.com/Yeagerist0/theknight/actions/workflows/ci.yml/badge.svg)](https://github.com/Yeagerist0/theknight/actions/workflows/ci.yml)
+
 Cloud misconfiguration scanner for AWS that doesn't just report — it opens
 the pull request that fixes it.
 
