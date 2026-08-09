@@ -17,7 +17,7 @@ import (
 
 	"github.com/google/go-github/v75/github"
 
-	"github.com/Yeagerist0/theknight/internal/remediate"
+	"github.com/Yeagerist0/theknight/pkg/remediate"
 	"github.com/Yeagerist0/theknight/pkg/rules"
 )
 
@@ -50,7 +50,7 @@ type FileFix struct {
 // remediate.SafeIdent — building a file path directly from an
 // unsanitized AWS string is a path-safety problem, not just a display
 // one, the same reasoning that drove the %q-escaping fixes in
-// internal/remediate's Terraform generation.
+// pkg/remediate's Terraform generation.
 func FixFilePath(f rules.Finding) string {
 	return fmt.Sprintf("theknight-fixes/%s-%s.tf", f.RuleID, remediate.SafeIdent(f.Resource.ID))
 }

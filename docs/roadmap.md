@@ -49,7 +49,7 @@ stay `internal/` since the backend doesn't need them yet.
       role's trust policy allows a wildcard or cross-account principal,
       High when scoped to an AWS service or same account (account ID
       derived from the role's own ARN, no extra STS call)
-- [x] `internal/remediate`: Terraform templates keyed by `RemediationID` —
+- [x] `pkg/remediate`: Terraform templates keyed by `RemediationID` —
       `s3-block-public-access` (covers both read and write findings),
       `iam-scope-actions` / `iam-scope-resources` (both point at IAM
       Access Analyzer instead of guessing a minimal action/resource set —
@@ -104,7 +104,7 @@ stay `internal/` since the backend doesn't need them yet.
 ## V1 — hosted product
 
 - [x] **GitHub PR creation (CLI + PAT slice, 2026-07-17)** —
-      `internal/githubpr` opens a real PR via the GitHub REST API: one
+      `pkg/githubpr` opens a real PR via the GitHub REST API: one
       new branch off the repo's default branch, one commit (blob+tree+
       commit via the Git Data API, not N separate per-file commits), one
       PR with a markdown table summarizing every finding. `--create-pr`

@@ -13,7 +13,7 @@
 // (rules already imports scanner for scanner.Resource), and rules/remediate
 // are pure functions over Resource/Finding structs that don't touch AWS at
 // all, so real vs. fake Resource values exercise them identically. That
-// coverage already exists in internal/rules and internal/remediate's own
+// coverage already exists in internal/rules and pkg/remediate's own
 // unit tests.
 //
 // Run with `make integration-test` (starts LocalStack, runs this file,

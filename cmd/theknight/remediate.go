@@ -7,9 +7,9 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/Yeagerist0/theknight/internal/githubpr"
-	"github.com/Yeagerist0/theknight/internal/remediate"
 	"github.com/Yeagerist0/theknight/pkg/awsclient"
+	"github.com/Yeagerist0/theknight/pkg/githubpr"
+	"github.com/Yeagerist0/theknight/pkg/remediate"
 	"github.com/Yeagerist0/theknight/pkg/rules"
 	"github.com/Yeagerist0/theknight/pkg/scanner"
 )
