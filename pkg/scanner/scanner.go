@@ -7,6 +7,9 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/sts"
+
 	"github.com/Yeagerist0/theknight/pkg/awsclient"
 )
 
@@ -30,7 +33,18 @@ func Discover(ctx context.Context, client *awsclient.Client) ([]Resource, error)
 		errs      []error
 	)
 
-	s3Resources, err := discoverS3(ctx, client.S3())
+	// The account id is needed to read account-level S3 Block Public Access
+	// (see discoverS3). A failure here (an unusual permission gap --
+	// sts:GetCallerIdentity is normally allowed to everyone) degrades to
+	// treating account-level PAB as unconfirmed rather than aborting the
+	// whole scan, the same non-fatal pattern every other discovery error
+	// here follows.
+	accountID, err := callerAccountID(ctx, client.STS())
+	if err != nil {
+		errs = append(errs, fmt.Errorf("sts: resolving account id: %w", err))
+	}
+
+	s3Resources, err := discoverS3(ctx, client.S3(), client.S3Control(), accountID)
 	if err != nil {
 		errs = append(errs, fmt.Errorf("s3: %w", err))
 	}
@@ -49,4 +63,19 @@ func Discover(ctx context.Context, client *awsclient.Client) ([]Resource, error)
 	resources = append(resources, sgResources...)
 
 	return resources, errors.Join(errs...)
+}
+
+// stsAPI is the subset of *sts.Client callerAccountID needs. Matching the
+// concrete client's method signature lets tests substitute a fake instead
+// of hitting AWS.
+type stsAPI interface {
+	GetCallerIdentity(ctx context.Context, params *sts.GetCallerIdentityInput, optFns ...func(*sts.Options)) (*sts.GetCallerIdentityOutput, error)
+}
+
+func callerAccountID(ctx context.Context, api stsAPI) (string, error) {
+	out, err := api.GetCallerIdentity(ctx, &sts.GetCallerIdentityInput{})
+	if err != nil {
+		return "", err
+	}
+	return aws.ToString(out.Account), nil
 }
