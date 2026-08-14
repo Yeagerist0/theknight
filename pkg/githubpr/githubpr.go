@@ -100,13 +100,6 @@ func (c *Client) CreatePR(ctx context.Context, owner, repo, baseBranch string, f
 		return "", fmt.Errorf("generating branch name: %w", err)
 	}
 	branchName := fmt.Sprintf("theknight/fixes-%x", suffix)
-	if _, _, err := c.gh.Git.CreateRef(ctx, owner, repo, github.CreateRef{
-		Ref: "refs/heads/" + branchName,
-		SHA: baseCommitSHA,
-	}); err != nil {
-		return "", fmt.Errorf("creating branch %s: %w", branchName, err)
-	}
-
 	entries := make([]*github.TreeEntry, 0, len(fixes))
 	for _, f := range fixes {
 		entries = append(entries, &github.TreeEntry{
@@ -131,10 +124,13 @@ func (c *Client) CreatePR(ctx context.Context, owner, repo, baseBranch string, f
 		return "", fmt.Errorf("creating commit: %w", err)
 	}
 
-	if _, _, err := c.gh.Git.UpdateRef(ctx, owner, repo, "refs/heads/"+branchName, github.UpdateRef{
+	// Publish the branch only after its tree and commit are ready. An API
+	// failure while building them should not leave an empty branch behind.
+	if _, _, err := c.gh.Git.CreateRef(ctx, owner, repo, github.CreateRef{
+		Ref: "refs/heads/" + branchName,
 		SHA: commit.GetSHA(),
 	}); err != nil {
-		return "", fmt.Errorf("updating branch %s: %w", branchName, err)
+		return "", fmt.Errorf("creating branch %s: %w", branchName, err)
 	}
 
 	pr, _, err := c.gh.PullRequests.Create(ctx, owner, repo, &github.NewPullRequest{
