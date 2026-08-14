@@ -89,8 +89,8 @@ func mockGitHubHandler(t *testing.T, opts struct {
 		if !strings.HasPrefix(body.Ref, "refs/heads/theknight/fixes-") {
 			t.Errorf("CreateRef.Ref = %q, want prefix refs/heads/theknight/fixes-", body.Ref)
 		}
-		if body.SHA != "base-commit-sha" {
-			t.Errorf("CreateRef.SHA = %q, want base-commit-sha", body.SHA)
+		if body.SHA != "new-commit-sha" {
+			t.Errorf("CreateRef.SHA = %q, want new-commit-sha", body.SHA)
 		}
 		writeJSON(t, w, github.Reference{Ref: github.Ptr(body.Ref), Object: &github.GitObject{SHA: github.Ptr(body.SHA)}})
 	})
@@ -133,15 +133,6 @@ func mockGitHubHandler(t *testing.T, opts struct {
 			t.Errorf("CreateCommit parents = %v, want [base-commit-sha]", body.Parents)
 		}
 		writeJSON(t, w, github.Commit{SHA: github.Ptr("new-commit-sha")})
-	})
-
-	mux.HandleFunc("PATCH /repos/acme/infra/git/refs/heads/", func(w http.ResponseWriter, r *http.Request) {
-		var body github.UpdateRef
-		mustDecode(t, r, &body)
-		if body.SHA != "new-commit-sha" {
-			t.Errorf("UpdateRef.SHA = %q, want new-commit-sha", body.SHA)
-		}
-		writeJSON(t, w, github.Reference{Object: &github.GitObject{SHA: github.Ptr(body.SHA)}})
 	})
 
 	mux.HandleFunc("POST /repos/acme/infra/pulls", func(w http.ResponseWriter, r *http.Request) {
@@ -214,9 +205,6 @@ func TestCreatePR_ExplicitBaseBranchSkipsRepoLookup(t *testing.T) {
 	})
 	mux.HandleFunc("POST /repos/acme/infra/git/commits", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(t, w, github.Commit{SHA: github.Ptr("new-commit-sha")})
-	})
-	mux.HandleFunc("PATCH /repos/acme/infra/git/refs/heads/", func(w http.ResponseWriter, r *http.Request) {
-		writeJSON(t, w, github.Reference{})
 	})
 	mux.HandleFunc("POST /repos/acme/infra/pulls", func(w http.ResponseWriter, r *http.Request) {
 		var body github.NewPullRequest
