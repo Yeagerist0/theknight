@@ -25,9 +25,11 @@ type fakeS3 struct {
 	buckets      []types.Bucket
 	grants       map[string][]types.Grant
 	policyPublic map[string]bool
+	policyDocs   map[string]string
 	blockEnabled map[string]bool
 	aclErr       error
 	policyErr    error
+	policyDocErr error
 	blockErr     error
 }
 
@@ -51,6 +53,17 @@ func (f *fakeS3) GetBucketPolicyStatus(ctx context.Context, params *s3.GetBucket
 		return nil, fakeAPIError{code: "NoSuchBucketPolicy"}
 	}
 	return &s3.GetBucketPolicyStatusOutput{PolicyStatus: &types.PolicyStatus{IsPublic: aws.Bool(public)}}, nil
+}
+
+func (f *fakeS3) GetBucketPolicy(ctx context.Context, params *s3.GetBucketPolicyInput, optFns ...func(*s3.Options)) (*s3.GetBucketPolicyOutput, error) {
+	if f.policyDocErr != nil {
+		return nil, f.policyDocErr
+	}
+	doc, ok := f.policyDocs[aws.ToString(params.Bucket)]
+	if !ok {
+		return nil, fakeAPIError{code: "NoSuchBucketPolicy"}
+	}
+	return &s3.GetBucketPolicyOutput{Policy: aws.String(doc)}, nil
 }
 
 func (f *fakeS3) GetPublicAccessBlock(ctx context.Context, params *s3.GetPublicAccessBlockInput, optFns ...func(*s3.Options)) (*s3.GetPublicAccessBlockOutput, error) {
@@ -120,6 +133,100 @@ func TestDiscoverS3_PrivateBucket(t *testing.T) {
 	}
 	if got := r.Metadata["public_access_block_enabled"]; got != true {
 		t.Errorf("public_access_block_enabled = %v, want true", got)
+	}
+}
+
+func TestDiscoverS3_PolicyGrantsReadOnly(t *testing.T) {
+	fake := &fakeS3{
+		buckets:      []types.Bucket{{Name: aws.String("read-only-policy-bucket")}},
+		policyPublic: map[string]bool{"read-only-policy-bucket": true},
+		policyDocs: map[string]string{
+			"read-only-policy-bucket": `{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":"*","Action":"s3:GetObject","Resource":"arn:aws:s3:::read-only-policy-bucket/*"}]}`,
+		},
+		blockEnabled: map[string]bool{"read-only-policy-bucket": false},
+	}
+
+	resources, err := discoverS3(context.Background(), fake)
+	if err != nil {
+		t.Fatalf("discoverS3() error = %v", err)
+	}
+
+	r := resources[0]
+	if got := r.Metadata["policy_public_read"]; got != true {
+		t.Errorf("policy_public_read = %v, want true", got)
+	}
+	if got := r.Metadata["policy_public_write"]; got != false {
+		t.Errorf("policy_public_write = %v, want false — the policy only grants s3:GetObject", got)
+	}
+}
+
+func TestDiscoverS3_PolicyGrantsWriteOnly(t *testing.T) {
+	fake := &fakeS3{
+		buckets:      []types.Bucket{{Name: aws.String("write-only-policy-bucket")}},
+		policyPublic: map[string]bool{"write-only-policy-bucket": true},
+		policyDocs: map[string]string{
+			"write-only-policy-bucket": `{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"AWS":"*"},"Action":"s3:PutObject","Resource":"arn:aws:s3:::write-only-policy-bucket/*"}]}`,
+		},
+		blockEnabled: map[string]bool{"write-only-policy-bucket": false},
+	}
+
+	resources, err := discoverS3(context.Background(), fake)
+	if err != nil {
+		t.Fatalf("discoverS3() error = %v", err)
+	}
+
+	r := resources[0]
+	if got := r.Metadata["policy_public_read"]; got != false {
+		t.Errorf("policy_public_read = %v, want false — positive parsing evidence overrides the generic policy_public default", got)
+	}
+	if got := r.Metadata["policy_public_write"]; got != true {
+		t.Errorf("policy_public_write = %v, want true", got)
+	}
+}
+
+func TestDiscoverS3_PolicyGrantsFullAccess(t *testing.T) {
+	fake := &fakeS3{
+		buckets:      []types.Bucket{{Name: aws.String("full-access-policy-bucket")}},
+		policyPublic: map[string]bool{"full-access-policy-bucket": true},
+		policyDocs: map[string]string{
+			"full-access-policy-bucket": `{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":"*","Action":"s3:*","Resource":"arn:aws:s3:::full-access-policy-bucket/*"}]}`,
+		},
+		blockEnabled: map[string]bool{"full-access-policy-bucket": false},
+	}
+
+	resources, err := discoverS3(context.Background(), fake)
+	if err != nil {
+		t.Fatalf("discoverS3() error = %v", err)
+	}
+
+	r := resources[0]
+	if got := r.Metadata["policy_public_read"]; got != true {
+		t.Errorf("policy_public_read = %v, want true", got)
+	}
+	if got := r.Metadata["policy_public_write"]; got != true {
+		t.Errorf("policy_public_write = %v, want true", got)
+	}
+}
+
+func TestDiscoverS3_PolicyDocumentUnreadableFallsBackConservatively(t *testing.T) {
+	fake := &fakeS3{
+		buckets:      []types.Bucket{{Name: aws.String("unreadable-policy-bucket")}},
+		policyPublic: map[string]bool{"unreadable-policy-bucket": true},
+		policyDocErr: errors.New("access denied"), // GetBucketPolicyStatus succeeded but GetBucketPolicy failed
+		blockEnabled: map[string]bool{"unreadable-policy-bucket": false},
+	}
+
+	resources, err := discoverS3(context.Background(), fake)
+	if err == nil {
+		t.Fatal("discoverS3() error = nil, want non-nil (the policy document call failed)")
+	}
+
+	r := resources[0]
+	if got := r.Metadata["policy_public_read"]; got != true {
+		t.Errorf("policy_public_read = %v, want true (falls back to policy_public when parsing isn't possible)", got)
+	}
+	if got := r.Metadata["policy_public_write"]; got != false {
+		t.Errorf("policy_public_write = %v, want false (never assumed without positive evidence)", got)
 	}
 }
 
