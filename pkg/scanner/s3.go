@@ -40,11 +40,6 @@ const (
 )
 
 func discoverS3(ctx context.Context, api s3API, s3c s3ControlAPI, accountID string) ([]Resource, error) {
-	out, err := api.ListBuckets(ctx, &s3.ListBucketsInput{})
-	if err != nil {
-		return nil, fmt.Errorf("listing buckets: %w", err)
-	}
-
 	var (
 		resources []Resource
 		errs      []error
@@ -64,77 +59,85 @@ func discoverS3(ctx context.Context, api s3API, s3c s3ControlAPI, accountID stri
 		errs = append(errs, fmt.Errorf("account public access block: %w", err))
 	}
 
-	for _, b := range out.Buckets {
-		name := aws.ToString(b.Name)
-		if name == "" {
-			continue
-		}
-
-		// Each signal is collected independently: a bucket where one of the
-		// three calls fails (a narrower IAM grant on just that action, an
-		// API not implemented by whatever's behind the s3API interface,
-		// ...) still gets reported with whatever metadata succeeded, rather
-		// than silently dropping the bucket from the scan entirely. Rules
-		// reading a missing key get Go's zero value (false) for that
-		// signal — see internal/rules/s3.go for why that default leans
-		// toward false positives over false negatives.
-		metadata := map[string]any{}
-
-		publicRead, publicWrite, err := bucketPublicACL(ctx, api, name)
+	paginator := s3.NewListBucketsPaginator(api, &s3.ListBucketsInput{})
+	for paginator.HasMorePages() {
+		page, err := paginator.NextPage(ctx)
 		if err != nil {
-			errs = append(errs, fmt.Errorf("bucket %s: acl: %w", name, err))
-		} else {
-			metadata["acl_public_read"] = publicRead
-			metadata["acl_public_write"] = publicWrite
+			errs = append(errs, fmt.Errorf("listing buckets: %w", err))
+			break
 		}
-
-		policyPublic, err := bucketPolicyPublic(ctx, api, name)
-		if err != nil {
-			errs = append(errs, fmt.Errorf("bucket %s: policy status: %w", name, err))
-		} else {
-			metadata["policy_public"] = policyPublic
-
-			// GetBucketPolicyStatus (above) is AWS's own authoritative "is
-			// this bucket public via policy" computation — it accounts for
-			// nuances (account-level Public Access Block, etc.) this
-			// scanner doesn't replicate, so it stays the source of truth
-			// for policyPublic itself. What it doesn't say is which
-			// permission the public grant covers, so when it says public,
-			// the actual policy document is parsed to find out.
-			//
-			// Defaults here are asymmetric on purpose: policyPublicRead
-			// falls back to policyPublic when parsing can't confirm
-			// either way, preserving this rule's existing (already
-			// shipped) detection behavior. policyPublicWrite only becomes
-			// true on positive evidence, never inferred — s3-public-write
-			// is new, and overclaiming impact in a security report is
-			// worse than under-claiming it.
-			policyPublicRead, policyPublicWrite := policyPublic, false
-			if policyPublic {
-				grantsRead, grantsWrite, permErr := bucketPolicyPermissions(ctx, api, name)
-				if permErr != nil {
-					errs = append(errs, fmt.Errorf("bucket %s: policy document: %w", name, permErr))
-				} else {
-					policyPublicRead, policyPublicWrite = grantsRead, grantsWrite
-				}
+		for _, b := range page.Buckets {
+			name := aws.ToString(b.Name)
+			if name == "" {
+				continue
 			}
-			metadata["policy_public_read"] = policyPublicRead
-			metadata["policy_public_write"] = policyPublicWrite
-		}
 
-		bucketBlock, err := bucketPublicAccessBlock(ctx, api, name)
-		if err != nil {
-			errs = append(errs, fmt.Errorf("bucket %s: public access block: %w", name, err))
-		} else {
-			metadata["public_access_block_enabled"] = bucketBlock.merge(acctBlock).fullyBlocked()
-		}
+			// Each signal is collected independently: a bucket where one of the
+			// three calls fails (a narrower IAM grant on just that action, an
+			// API not implemented by whatever's behind the s3API interface,
+			// ...) still gets reported with whatever metadata succeeded, rather
+			// than silently dropping the bucket from the scan entirely. Rules
+			// reading a missing key get Go's zero value (false) for that
+			// signal — see internal/rules/s3.go for why that default leans
+			// toward false positives over false negatives.
+			metadata := map[string]any{}
 
-		resources = append(resources, Resource{
-			ID:       name,
-			Type:     "aws_s3_bucket",
-			Region:   aws.ToString(b.BucketRegion),
-			Metadata: metadata,
-		})
+			publicRead, publicWrite, err := bucketPublicACL(ctx, api, name)
+			if err != nil {
+				errs = append(errs, fmt.Errorf("bucket %s: acl: %w", name, err))
+			} else {
+				metadata["acl_public_read"] = publicRead
+				metadata["acl_public_write"] = publicWrite
+			}
+
+			policyPublic, err := bucketPolicyPublic(ctx, api, name)
+			if err != nil {
+				errs = append(errs, fmt.Errorf("bucket %s: policy status: %w", name, err))
+			} else {
+				metadata["policy_public"] = policyPublic
+
+				// GetBucketPolicyStatus (above) is AWS's own authoritative "is
+				// this bucket public via policy" computation — it accounts for
+				// nuances (account-level Public Access Block, etc.) this
+				// scanner doesn't replicate, so it stays the source of truth
+				// for policyPublic itself. What it doesn't say is which
+				// permission the public grant covers, so when it says public,
+				// the actual policy document is parsed to find out.
+				//
+				// Defaults here are asymmetric on purpose: policyPublicRead
+				// falls back to policyPublic when parsing can't confirm
+				// either way, preserving this rule's existing (already
+				// shipped) detection behavior. policyPublicWrite only becomes
+				// true on positive evidence, never inferred — s3-public-write
+				// is new, and overclaiming impact in a security report is
+				// worse than under-claiming it.
+				policyPublicRead, policyPublicWrite := policyPublic, false
+				if policyPublic {
+					grantsRead, grantsWrite, permErr := bucketPolicyPermissions(ctx, api, name)
+					if permErr != nil {
+						errs = append(errs, fmt.Errorf("bucket %s: policy document: %w", name, permErr))
+					} else {
+						policyPublicRead, policyPublicWrite = grantsRead, grantsWrite
+					}
+				}
+				metadata["policy_public_read"] = policyPublicRead
+				metadata["policy_public_write"] = policyPublicWrite
+			}
+
+			bucketBlock, err := bucketPublicAccessBlock(ctx, api, name)
+			if err != nil {
+				errs = append(errs, fmt.Errorf("bucket %s: public access block: %w", name, err))
+			} else {
+				metadata["public_access_block_enabled"] = bucketBlock.merge(acctBlock).fullyBlocked()
+			}
+
+			resources = append(resources, Resource{
+				ID:       name,
+				Type:     "aws_s3_bucket",
+				Region:   aws.ToString(b.BucketRegion),
+				Metadata: metadata,
+			})
+		}
 	}
 
 	return resources, errors.Join(errs...)
