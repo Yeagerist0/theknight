@@ -1,4 +1,4 @@
-.PHONY: build test lint vet fmt clean run localstack-up localstack-down integration-test
+.PHONY: build test lint vet fmt fmt-check clean run localstack-up localstack-down integration-test
 
 LOCALSTACK_CONTAINER := theknight-localstack
 LOCALSTACK_IMAGE := localstack/localstack:3.8.1
@@ -18,7 +18,10 @@ vet:
 fmt:
 	gofmt -l -w .
 
-lint: fmt vet
+fmt-check:
+	@files="$$(gofmt -l .)"; if [ -n "$$files" ]; then printf 'Files need gofmt:\n%s\n' "$$files"; exit 1; fi
+
+lint: fmt-check vet
 
 clean:
 	rm -rf bin/
