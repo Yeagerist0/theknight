@@ -64,6 +64,9 @@ func FixFilePath(f rules.Finding) string {
 // per fix, in a single new commit on a new branch off the repo's default
 // branch (or baseBranch, if non-empty). Returns the PR's HTML URL.
 func (c *Client) CreatePR(ctx context.Context, owner, repo, baseBranch string, fixes []FileFix) (string, error) {
+	if owner == "" || repo == "" || strings.ContainsAny(owner+repo, "/ \t\r\n") {
+		return "", fmt.Errorf("invalid GitHub repository %q/%q", owner, repo)
+	}
 	if len(fixes) == 0 {
 		return "", fmt.Errorf("no fixes to open a PR for")
 	}
@@ -81,18 +84,27 @@ func (c *Client) CreatePR(ctx context.Context, owner, repo, baseBranch string, f
 		}
 		baseBranch = repoInfo.GetDefaultBranch()
 	}
+	if baseBranch == "" {
+		return "", fmt.Errorf("repository has no default branch")
+	}
 
 	baseRef, _, err := c.gh.Git.GetRef(ctx, owner, repo, "refs/heads/"+baseBranch)
 	if err != nil {
 		return "", fmt.Errorf("getting base branch ref: %w", err)
 	}
 	baseCommitSHA := baseRef.GetObject().GetSHA()
+	if baseCommitSHA == "" {
+		return "", fmt.Errorf("base branch ref has no commit SHA")
+	}
 
 	baseCommit, _, err := c.gh.Git.GetCommit(ctx, owner, repo, baseCommitSHA)
 	if err != nil {
 		return "", fmt.Errorf("getting base commit: %w", err)
 	}
 	baseTreeSHA := baseCommit.GetTree().GetSHA()
+	if baseTreeSHA == "" {
+		return "", fmt.Errorf("base commit has no tree SHA")
+	}
 
 	// Randomize the suffix so concurrent runs cannot collide in the same second.
 	var suffix [8]byte
