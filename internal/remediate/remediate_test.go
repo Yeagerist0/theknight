@@ -3,7 +3,7 @@ package remediate
 import (
 	"testing"
 
-	"github.com/Yeagerist0/theknight/internal/rules"
+	"github.com/Yeagerist0/theknight/pkg/rules"
 )
 
 func TestGenerate_UnknownRemediationID(t *testing.T) {

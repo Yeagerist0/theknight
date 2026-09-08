@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Yeagerist0/theknight/internal/scanner"
+	"github.com/Yeagerist0/theknight/pkg/scanner"
 )
 
 func TestSGOpenIngressRule_Applies(t *testing.T) {
