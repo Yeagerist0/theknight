@@ -57,7 +57,7 @@ type FileFix struct {
 // one, the same reasoning that drove the %q-escaping fixes in
 // pkg/remediate's Terraform generation.
 func FixFilePath(f rules.Finding) string {
-	return fmt.Sprintf("theknight-fixes/%s-%s.tf", f.RuleID, remediate.SafeIdent(f.Resource.ID))
+	return fmt.Sprintf("theknight-fixes/%s-%s.tf", remediate.SafeIdent(f.RuleID), remediate.SafeIdent(f.Resource.ID))
 }
 
 // CreatePR opens a pull request against owner/repo containing one file
