@@ -11,7 +11,7 @@ import (
 
 	"github.com/google/go-github/v75/github"
 
-	"github.com/Yeagerist0/theknight/internal/remediate"
+	"github.com/Yeagerist0/theknight/pkg/remediate"
 	"github.com/Yeagerist0/theknight/pkg/rules"
 	"github.com/Yeagerist0/theknight/pkg/scanner"
 )
