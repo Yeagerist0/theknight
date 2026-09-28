@@ -25,6 +25,7 @@ func (e fakeAPIError) ErrorFault() smithy.ErrorFault { return smithy.FaultUnknow
 
 type fakeS3 struct {
 	buckets      []types.Bucket
+	bucketPages  [][]types.Bucket
 	grants       map[string][]types.Grant
 	policyPublic map[string]bool
 	policyDocs   map[string]string
@@ -36,7 +37,31 @@ type fakeS3 struct {
 }
 
 func (f *fakeS3) ListBuckets(ctx context.Context, params *s3.ListBucketsInput, optFns ...func(*s3.Options)) (*s3.ListBucketsOutput, error) {
+	if len(f.bucketPages) > 0 {
+		if aws.ToString(params.ContinuationToken) == "next" {
+			return &s3.ListBucketsOutput{Buckets: f.bucketPages[1]}, nil
+		}
+		return &s3.ListBucketsOutput{Buckets: f.bucketPages[0], ContinuationToken: aws.String("next")}, nil
+	}
 	return &s3.ListBucketsOutput{Buckets: f.buckets}, nil
+}
+
+func TestDiscoverS3_PaginatesBucketList(t *testing.T) {
+	fake := &fakeS3{bucketPages: [][]types.Bucket{
+		{{Name: aws.String("first-page-bucket")}},
+		{{Name: aws.String("second-page-bucket")}},
+	}}
+
+	resources, err := discoverS3(context.Background(), fake, &fakeS3Control{}, "")
+	if err != nil {
+		t.Fatalf("discoverS3() error = %v", err)
+	}
+	if len(resources) != 2 {
+		t.Fatalf("got %d resources, want both pages (2)", len(resources))
+	}
+	if resources[0].ID != "first-page-bucket" || resources[1].ID != "second-page-bucket" {
+		t.Fatalf("bucket IDs = [%q, %q], want both pages in order", resources[0].ID, resources[1].ID)
+	}
 }
 
 func (f *fakeS3) GetBucketAcl(ctx context.Context, params *s3.GetBucketAclInput, optFns ...func(*s3.Options)) (*s3.GetBucketAclOutput, error) {
