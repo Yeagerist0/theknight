@@ -217,7 +217,7 @@ func uniquifyPath(path string, n int) string {
 }
 
 func fileContent(f FileFix) string {
-	return fmt.Sprintf("# %s: %s\n# %s\n\n%s", f.Finding.RuleID, f.Finding.Resource.ID, f.Explanation, f.Terraform)
+	return fmt.Sprintf("# %s: %s\n# %s\n\n%s", singleLine(f.Finding.RuleID), singleLine(f.Finding.Resource.ID), singleLine(f.Explanation), f.Terraform)
 }
 
 func commitMessage(fixes []FileFix) string {
@@ -226,7 +226,7 @@ func commitMessage(fixes []FileFix) string {
 
 func prTitle(fixes []FileFix) string {
 	if len(fixes) == 1 {
-		return fmt.Sprintf("theknight: fix %s on %s", fixes[0].Finding.RuleID, fixes[0].Finding.Resource.ID)
+		return fmt.Sprintf("theknight: fix %s on %s", singleLine(fixes[0].Finding.RuleID), singleLine(fixes[0].Finding.Resource.ID))
 	}
 	return fmt.Sprintf("theknight: fix %d misconfigurations", len(fixes))
 }
@@ -256,6 +256,12 @@ func prBody(fixes []FileFix) string {
 }
 
 func markdownCell(s string) string {
-	s = strings.NewReplacer("\r", " ", "\n", " ").Replace(s)
+	s = singleLine(s)
 	return strings.ReplaceAll(html.EscapeString(s), "|", "&#124;")
+}
+
+// singleLine keeps external identifiers and explanations from breaking a
+// generated Terraform comment, PR title, or Markdown row.
+func singleLine(s string) string {
+	return strings.NewReplacer("\r", " ", "\n", " ").Replace(s)
 }
