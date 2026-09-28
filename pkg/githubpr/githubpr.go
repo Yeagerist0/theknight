@@ -65,6 +65,7 @@ func (c *Client) CreatePR(ctx context.Context, owner, repo, baseBranch string, f
 	if len(fixes) == 0 {
 		return "", fmt.Errorf("no fixes to open a PR for")
 	}
+	fixes = dedupePaths(fixes)
 
 	if baseBranch == "" {
 		repoInfo, _, err := c.gh.Repositories.Get(ctx, owner, repo)
@@ -135,6 +136,44 @@ func (c *Client) CreatePR(ctx context.Context, owner, repo, baseBranch string, f
 	}
 
 	return pr.GetHTMLURL(), nil
+}
+
+// dedupePaths returns fixes with Path made unique, preserving order.
+// FixFilePath runs an AWS resource name through remediate.SafeIdent, which
+// collapses any run of characters outside [a-zA-Z0-9_-] to a single "_" --
+// safe for a file path, but not injective. Two distinct, both perfectly
+// valid resource names can collapse to the same identifier: an EC2
+// security group named "db prod" and one named "db.prod" (AWS's security
+// group names allow a much looser character set than S3 bucket names --
+// see the README) both become "db_prod". Without this, CreateTree below
+// would receive two entries with an identical Path, and GitHub silently
+// keeps one and drops the other: a real finding goes missing from the PR
+// with no error anywhere, and the reviewer-facing table would still cite
+// the dropped finding's resource ID next to the surviving file's content.
+// Second and later collisions on the same path get "-2", "-3", ... spliced
+// in before the extension; the first occurrence keeps its plain path so
+// the common, non-colliding case is unaffected.
+func dedupePaths(fixes []FileFix) []FileFix {
+	seen := make(map[string]int, len(fixes))
+	out := make([]FileFix, len(fixes))
+	for i, f := range fixes {
+		seen[f.Path]++
+		if n := seen[f.Path]; n > 1 {
+			f.Path = uniquifyPath(f.Path, n)
+		}
+		out[i] = f
+	}
+	return out
+}
+
+// uniquifyPath inserts "-n" before path's final extension (if it has one)
+// or appends it otherwise.
+func uniquifyPath(path string, n int) string {
+	ext := ""
+	if i := strings.LastIndex(path, "."); i > strings.LastIndex(path, "/") {
+		path, ext = path[:i], path[i:]
+	}
+	return fmt.Sprintf("%s-%d%s", path, n, ext)
 }
 
 func fileContent(f FileFix) string {

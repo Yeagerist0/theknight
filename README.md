@@ -75,6 +75,32 @@ statements, not just a literal `"*"` — `NotAction` grants every action
 except the ones listed, which reads as a restrictive exclusion list but
 is "almost all of IAM" in practice; a check that only looked for a
 literal wildcard string gave that pattern a clean bill of health.
+`sg-open-ingress` also distinguishes which address family an open rule
+actually uses — IPv4's `0.0.0.0/0`, IPv6's `::/0`, or both — rather than
+describing every finding as `0.0.0.0/0`. A security group reachable only
+via `::/0` used to get a finding (and a remediation PR) that said
+`0.0.0.0/0`; `theknight remediate`'s generated Terraform only ever set
+`cidr_blocks`, so applying that fix to an IPv6-only-open group wouldn't
+have closed the actual hole. The remediation template now emits
+`ipv6_cidr_blocks` for the families that are actually open, not just
+`cidr_blocks` by default.
+
+Two fixes in `pkg/remediate`/`pkg/githubpr` closed gaps in the trust
+boundary itself, not in what gets detected. `s3-block-public-access`'s
+generated Terraform used the raw bucket name as the Terraform resource
+label; S3 bucket names allow dots and may start with a digit, neither
+valid in a Terraform identifier, so a bucket named like
+`assets.example.com` would render a PR that fails `terraform validate`
+after merge. It now runs the label through `SafeIdent`, the same function
+`iam-scope-actions`/`iam-scope-resources` and `sg-restrict-ingress-cidr`
+already used. And because `SafeIdent` collapses any run of
+non-identifier characters to a single `_`, it isn't injective — two
+distinct, both AWS-valid resource names (an EC2 security group named
+`db prod` and one named `db.prod`) can produce the same file path.
+`CreatePR` now deduplicates colliding paths before building the commit,
+so a collision gets a `-2`, `-3`, ... suffix instead of GitHub silently
+keeping one file and dropping the other out of the PR with no error
+anywhere.
 
 Findings are always sorted most-severe-first (`scan` and `remediate`
 alike), `--output json` uses proper camelCase field names instead of raw

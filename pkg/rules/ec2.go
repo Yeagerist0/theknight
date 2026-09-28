@@ -33,7 +33,7 @@ func (sgOpenIngressRule) Evaluate(r scanner.Resource) (Finding, bool) {
 	// specific-port match, so it's weighted higher.
 	severity := SeverityHigh
 	title := "Security group open to the internet on a sensitive port"
-	desc := fmt.Sprintf("Security group %q (%q) allows ingress from 0.0.0.0/0", r.ID, groupName)
+	desc := fmt.Sprintf("Security group %q (%q) allows ingress from %s", r.ID, groupName, openCIDRList(r))
 	if openAll {
 		severity = SeverityCritical
 		title = "Security group open to the internet on all ports"
@@ -50,4 +50,28 @@ func (sgOpenIngressRule) Evaluate(r scanner.Resource) (Finding, bool) {
 		Description:   desc,
 		RemediationID: "sg-restrict-ingress-cidr",
 	}, true
+}
+
+// openCIDRList describes which address family (or both) actually carries
+// the open rule, so the finding doesn't claim "0.0.0.0/0" for a group
+// that's only reachable via IPv6's ::/0 -- a real, previously-made claim
+// a reviewer could act on incorrectly (restricting the IPv4 rule while the
+// actual IPv6 hole stays open). Missing metadata (an older scan result, or
+// a test fixture that predates this field) falls back to the IPv4-only
+// wording this rule used unconditionally before, rather than producing an
+// empty or malformed sentence.
+func openCIDRList(r scanner.Resource) string {
+	v4, hasV4 := r.Metadata["ipv4_open"].(bool)
+	v6, hasV6 := r.Metadata["ipv6_open"].(bool)
+	if !hasV4 && !hasV6 {
+		return "0.0.0.0/0"
+	}
+	switch {
+	case v4 && v6:
+		return "0.0.0.0/0 and ::/0"
+	case v6:
+		return "::/0"
+	default:
+		return "0.0.0.0/0"
+	}
 }
