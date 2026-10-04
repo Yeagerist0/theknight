@@ -51,6 +51,52 @@ func TestDiscoverSecurityGroups_OpenSensitivePort(t *testing.T) {
 	if got := r.Metadata["open_all_ports"]; got != false {
 		t.Errorf("open_all_ports = %v, want false", got)
 	}
+	if got := r.Metadata["ipv4_open"]; got != true {
+		t.Errorf("ipv4_open = %v, want true", got)
+	}
+	if got := r.Metadata["ipv6_open"]; got != false {
+		t.Errorf("ipv6_open = %v, want false (no Ipv6Ranges on this rule)", got)
+	}
+}
+
+// TestDiscoverSecurityGroups_OpenViaIPv6Only is the regression test for the
+// gap this fix closes: a security group reachable only via ::/0 (no
+// 0.0.0.0/0 rule at all) used to be indistinguishable in the metadata from
+// one open via IPv4 -- the finding and the remediation Terraform both
+// unconditionally assumed 0.0.0.0/0.
+func TestDiscoverSecurityGroups_OpenViaIPv6Only(t *testing.T) {
+	fake := &fakeEC2{
+		groups: []types.SecurityGroup{
+			{
+				GroupId:   aws.String("sg-5"),
+				GroupName: aws.String("ipv6-ssh-open"),
+				IpPermissions: []types.IpPermission{
+					{
+						IpProtocol: aws.String("tcp"),
+						FromPort:   aws.Int32(22),
+						ToPort:     aws.Int32(22),
+						Ipv6Ranges: []types.Ipv6Range{{CidrIpv6: aws.String("::/0")}},
+					},
+				},
+			},
+		},
+	}
+
+	resources, err := discoverSecurityGroups(context.Background(), fake, "us-east-1")
+	if err != nil {
+		t.Fatalf("discoverSecurityGroups() error = %v", err)
+	}
+	r := resources[0]
+	ports, _ := r.Metadata["open_ingress_ports"].([]int32)
+	if len(ports) != 1 || ports[0] != 22 {
+		t.Errorf("open_ingress_ports = %v, want [22] (::/0 is still an open-to-the-internet rule)", ports)
+	}
+	if got := r.Metadata["ipv4_open"]; got != false {
+		t.Errorf("ipv4_open = %v, want false (no 0.0.0.0/0 rule exists on this group)", got)
+	}
+	if got := r.Metadata["ipv6_open"]; got != true {
+		t.Errorf("ipv6_open = %v, want true", got)
+	}
 }
 
 func TestDiscoverSecurityGroups_OpenAllPorts(t *testing.T) {
