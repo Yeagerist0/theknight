@@ -90,7 +90,11 @@ func TestIntegration_DiscoverS3_PublicReadBucket(t *testing.T) {
 		t.Fatalf("PutPublicAccessBlock: %v", err)
 	}
 
-	resources, err := discoverS3(ctx, client)
+	// accountID "" skips the account-level Block Public Access lookup:
+	// that path is covered by the fakeS3Control unit tests in s3_test.go,
+	// not here, since S3 Control support in LocalStack's community edition
+	// isn't something this suite can rely on.
+	resources, err := discoverS3(ctx, client, nil, "")
 	requireOnlyKnownLocalStackGap(t, err, bucket)
 
 	resource := findResourceByID(t, resources, bucket)
@@ -193,7 +197,11 @@ func TestIntegration_DiscoverS3_PrivateBucketWithPublicAccessBlock(t *testing.T)
 		t.Fatalf("PutPublicAccessBlock: %v", err)
 	}
 
-	resources, err := discoverS3(ctx, client)
+	// accountID "" skips the account-level Block Public Access lookup:
+	// that path is covered by the fakeS3Control unit tests in s3_test.go,
+	// not here, since S3 Control support in LocalStack's community edition
+	// isn't something this suite can rely on.
+	resources, err := discoverS3(ctx, client, nil, "")
 	requireOnlyKnownLocalStackGap(t, err, bucket)
 
 	resource := findResourceByID(t, resources, bucket)

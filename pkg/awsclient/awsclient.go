@@ -12,6 +12,8 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/ec2"
 	"github.com/aws/aws-sdk-go-v2/service/iam"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/aws/aws-sdk-go-v2/service/s3control"
+	"github.com/aws/aws-sdk-go-v2/service/sts"
 )
 
 // Client holds the resolved AWS config used to construct per-service SDK
@@ -56,3 +58,14 @@ func (c *Client) IAM() *iam.Client { return iam.NewFromConfig(c.Config) }
 
 // EC2 constructs an EC2 service client from the resolved config.
 func (c *Client) EC2() *ec2.Client { return ec2.NewFromConfig(c.Config) }
+
+// S3Control constructs an S3 Control service client from the resolved
+// config. S3 Control carries the ACCOUNT-level Block Public Access
+// configuration — a separate setting from the per-bucket one s3.Client's
+// GetPublicAccessBlock returns (see pkg/scanner/s3.go), and the one AWS
+// itself recommends organizations set once instead of per bucket.
+func (c *Client) S3Control() *s3control.Client { return s3control.NewFromConfig(c.Config) }
+
+// STS constructs an STS service client from the resolved config. STS is a
+// global service; the client ignores Config.Region.
+func (c *Client) STS() *sts.Client { return sts.NewFromConfig(c.Config) }
