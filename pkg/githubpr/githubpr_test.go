@@ -277,3 +277,26 @@ func TestFixFilePath_SanitizesARNSlashesAndColons(t *testing.T) {
 		t.Errorf("FixFilePath() = %q, want exactly one path separator (no nested directories from the ARN's slashes)", path)
 	}
 }
+
+func briefedFix(briefing string) FileFix {
+	f := rules.Finding{RuleID: "sg-open-ingress", Severity: rules.SeverityCritical, Resource: scanner.Resource{ID: "sg-0a1b2c3d4e5f60718", Type: "aws_security_group"}}
+	return FileFix{Path: "fixes/sg.tf", Fix: remediate.Fix{Finding: f, Explanation: "template"}, Briefing: briefing}
+}
+
+func TestPRBody_BriefingSectionOnlyWhenPresent(t *testing.T) {
+	plain := prBody([]FileFix{briefedFix("")})
+	if strings.Contains(plain, "Reviewer briefings") {
+		t.Fatalf("no briefing was produced, the section must not appear:\n%s", plain)
+	}
+
+	with := prBody([]FileFix{briefedFix(""), briefedFix("The group is open to 0.0.0.0/0, a critical exposure.")})
+	if !strings.Contains(with, "### Reviewer briefings") || !strings.Contains(with, "- `sg-0a1b2c3d4e5f60718`: The group is open to 0.0.0.0/0, a critical exposure.") {
+		t.Fatalf("briefing section missing or wrong:\n%s", with)
+	}
+	if !strings.Contains(with, "not by a model") {
+		t.Fatalf("the section must say the fixes are deterministic:\n%s", with)
+	}
+	if strings.Count(with, "### Reviewer briefings") != 1 {
+		t.Fatal("the heading must appear once")
+	}
+}

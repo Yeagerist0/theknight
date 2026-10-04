@@ -8,6 +8,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/Yeagerist0/theknight/pkg/awsclient"
+	"github.com/Yeagerist0/theknight/pkg/explain"
 	"github.com/Yeagerist0/theknight/pkg/githubpr"
 	"github.com/Yeagerist0/theknight/pkg/remediate"
 	"github.com/Yeagerist0/theknight/pkg/rules"
@@ -22,6 +23,7 @@ func newRemediateCmd() *cobra.Command {
 		createPR   bool
 		repoFlag   string
 		baseBranch string
+		explainOn  bool
 	)
 
 	cmd := &cobra.Command{
@@ -60,8 +62,17 @@ func newRemediateCmd() *cobra.Command {
 				return nil
 			}
 
+			var briefer explain.Provider
+			if explainOn {
+				llm, err := providerFromEnv()
+				if err != nil {
+					return err
+				}
+				briefer = llm
+			}
+
 			if createPR {
-				return runCreatePR(cmd, repoFlag, baseBranch, findings)
+				return runCreatePR(cmd, repoFlag, baseBranch, findings, briefer)
 			}
 
 			for i, f := range findings {
@@ -78,7 +89,13 @@ func newRemediateCmd() *cobra.Command {
 				if i > 0 {
 					fmt.Fprintln(out)
 				}
-				fmt.Fprintf(out, "# %s: %s\n# %s\n\n%s", f.RuleID, f.Resource.ID, fix.Explanation, fix.Terraform)
+				fmt.Fprintf(out, "# %s: %s\n# %s\n", f.RuleID, f.Resource.ID, fix.Explanation)
+				if briefer != nil {
+					if res := briefAndReport(ctx, briefer, f, fix.Explanation, errOut); res.Source == explain.SourceLLM {
+						fmt.Fprintf(out, "# Briefing (AI-assisted, checked against the finding): %s\n", res.Text)
+					}
+				}
+				fmt.Fprintf(out, "\n%s", fix.Terraform)
 			}
 
 			return nil
@@ -90,6 +107,7 @@ func newRemediateCmd() *cobra.Command {
 	cmd.Flags().StringVar(&severity, "severity", "", "minimum severity to include: low|medium|high|critical (default: all)")
 	cmd.Flags().BoolVar(&createPR, "create-pr", false, "open a real pull request with the fixes instead of printing them (requires --repo and GITHUB_TOKEN)")
 	cmd.Flags().StringVar(&repoFlag, "repo", "", "GitHub repo to open the PR against, as owner/name (required with --create-pr)")
+	cmd.Flags().BoolVar(&explainOn, "explain", false, "add an AI-written reviewer briefing, checked against the finding (needs THEKNIGHT_LLM_API_KEY; the fix itself stays deterministic)")
 	cmd.Flags().StringVar(&baseBranch, "base-branch", "", "branch to open the PR against (default: the repo's default branch)")
 
 	return cmd
@@ -99,7 +117,7 @@ func newRemediateCmd() *cobra.Command {
 // containing all of them. The GitHub token comes from GITHUB_TOKEN only —
 // never a CLI flag, for the same reason AWS credentials never are: a flag
 // value leaks into shell history and any process listing (ps aux).
-func runCreatePR(cmd *cobra.Command, repoFlag, baseBranch string, findings []rules.Finding) error {
+func runCreatePR(cmd *cobra.Command, repoFlag, baseBranch string, findings []rules.Finding, briefer explain.Provider) error {
 	out := cmd.OutOrStdout()
 	errOut := cmd.ErrOrStderr()
 
@@ -124,7 +142,13 @@ func runCreatePR(cmd *cobra.Command, repoFlag, baseBranch string, findings []rul
 			fmt.Fprintf(errOut, "no remediation template yet for rule %q (%s)\n", f.RuleID, f.Resource.ID)
 			continue
 		}
-		fixes = append(fixes, githubpr.FileFix{Path: githubpr.FixFilePath(f), Fix: fix})
+		ff := githubpr.FileFix{Path: githubpr.FixFilePath(f), Fix: fix}
+		if briefer != nil {
+			if res := briefAndReport(cmd.Context(), briefer, f, fix.Explanation, errOut); res.Source == explain.SourceLLM {
+				ff.Briefing = res.Text
+			}
+		}
+		fixes = append(fixes, ff)
 	}
 
 	if len(fixes) == 0 {

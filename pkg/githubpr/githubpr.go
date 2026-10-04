@@ -42,6 +42,9 @@ func New(token string) *Client {
 type FileFix struct {
 	Path string
 	remediate.Fix
+	// Briefing is an optional reviewer briefing written by a model and checked
+	// against the finding by package explain. Empty means none was produced.
+	Briefing string
 }
 
 // FixFilePath derives a safe repo-relative path for a fix from its
@@ -156,6 +159,17 @@ func prBody(fixes []FileFix) string {
 	b.WriteString("| --- | --- | --- | --- |\n")
 	for _, f := range fixes {
 		fmt.Fprintf(&b, "| %s | `%s` | `%s` | `%s` |\n", f.Finding.Severity, f.Finding.RuleID, f.Finding.Resource.ID, f.Path)
+	}
+	var briefed bool
+	for _, f := range fixes {
+		if f.Briefing == "" {
+			continue
+		}
+		if !briefed {
+			b.WriteString("\n### Reviewer briefings\n\nAI-assisted, and checked against each finding: a briefing is dropped if it adds an identifier or quote the finding does not contain, contradicts its severity, or claims exploitation. The fixes above are generated deterministically, not by a model.\n\n")
+			briefed = true
+		}
+		fmt.Fprintf(&b, "- `%s`: %s\n", f.Finding.Resource.ID, f.Briefing)
 	}
 	return b.String()
 }
