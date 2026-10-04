@@ -64,12 +64,24 @@ func openIngress(perms []types.IpPermission) (openPorts []int32, openAll bool) {
 			continue
 		}
 
-		if aws.ToString(perm.IpProtocol) == "-1" {
+		from, to := aws.ToInt32(perm.FromPort), aws.ToInt32(perm.ToPort)
+
+		// Protocol -1 (AWS console's "All traffic" preset) is the obvious
+		// case, but it's not the only way to open every port: "All TCP" /
+		// "All UDP" (also offered as presets in the console, and common from
+		// a fat-fingered manual rule) set a specific protocol with
+		// FromPort/ToPort spanning the full 0-65535 range instead. Both
+		// expose every sensitive port this scanner watches for, so both
+		// earn the same Critical "all ports" classification -- a rule that
+		// only checked for protocol -1 would quietly under-report an
+		// All-TCP-open-to-the-internet group as merely "some sensitive
+		// ports open". from<=1 tolerates either convention a UI or a
+		// hand-written rule might use for "the whole range" (0 or 1).
+		if aws.ToString(perm.IpProtocol) == "-1" || (from <= 1 && to >= 65535) {
 			openAll = true
 			continue
 		}
 
-		from, to := aws.ToInt32(perm.FromPort), aws.ToInt32(perm.ToPort)
 		for _, port := range sensitiveIngressPorts {
 			if port >= from && port <= to && !seen[port] {
 				seen[port] = true

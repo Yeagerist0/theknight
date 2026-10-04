@@ -38,7 +38,7 @@ func (iamWildcardActionRule) Evaluate(r scanner.Resource) (Finding, bool) {
 		Resource:      r,
 		Severity:      severity,
 		Title:         "IAM role grants wildcard action permissions",
-		Description:   fmt.Sprintf("Role %q has an Allow statement with Action: \"*\" in policy %s.%s", roleName, strings.Join(policies, ", "), exposureNote),
+		Description:   fmt.Sprintf("Role %q has an Allow statement granting every action, either directly (Action: \"*\") or via a NotAction exclusion list, in policy %s.%s", roleName, strings.Join(policies, ", "), exposureNote),
 		RemediationID: "iam-scope-actions",
 	}, true
 }
@@ -87,7 +87,7 @@ func (iamWildcardResourceRule) Evaluate(r scanner.Resource) (Finding, bool) {
 		Resource:      r,
 		Severity:      severity,
 		Title:         "IAM role grants wildcard resource permissions",
-		Description:   fmt.Sprintf("Role %q has an Allow statement with Resource: \"*\" in policy %s.%s", roleName, strings.Join(policies, ", "), exposureNote),
+		Description:   fmt.Sprintf("Role %q has an Allow statement granting access to every resource, either directly (Resource: \"*\") or via a NotResource exclusion list, in policy %s.%s", roleName, strings.Join(policies, ", "), exposureNote),
 		RemediationID: "iam-scope-resources",
 	}, true
 }

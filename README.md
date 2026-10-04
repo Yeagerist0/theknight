@@ -61,13 +61,20 @@ behavior) but write is never assumed without positive evidence —
 overclaiming impact in a security report is worse than underclaiming it.
 
 Severity is weighted by real exposure, not just rule identity:
-`sg-open-ingress` is Critical for a protocol `-1` rule (every port
-reachable) and High for a specific sensitive port; `iam-wildcard-action` /
-`iam-wildcard-resource` are Critical when the role's trust policy allows
-assumption by a wildcard or cross-account principal, High when it's
-scoped to an AWS service or the same account. Two roles with an identical
-wildcard permission aren't the same risk if only one of them can be
-assumed from outside the account — the severity should say so.
+`sg-open-ingress` is Critical for a rule that reaches every port — a
+protocol `-1` rule, or the console's "All TCP"/"All UDP" presets, which
+set a specific protocol with the port range spanning the full 0-65535
+instead and used to be missed — and High for a specific sensitive port.
+`iam-wildcard-action` / `iam-wildcard-resource` are Critical when the
+role's trust policy allows assumption by a wildcard or cross-account
+principal, High when it's scoped to an AWS service or the same account.
+Two roles with an identical wildcard permission aren't the same risk if
+only one of them can be assumed from outside the account — the severity
+should say so. Both wildcard rules also catch `NotAction`/`NotResource`
+statements, not just a literal `"*"` — `NotAction` grants every action
+except the ones listed, which reads as a restrictive exclusion list but
+is "almost all of IAM" in practice; a check that only looked for a
+literal wildcard string gave that pattern a clean bill of health.
 
 Findings are always sorted most-severe-first (`scan` and `remediate`
 alike), `--output json` uses proper camelCase field names instead of raw
