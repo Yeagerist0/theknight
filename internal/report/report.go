@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
 	"text/tabwriter"
 
 	"golang.org/x/term"
@@ -47,9 +48,33 @@ func writeTable(w io.Writer, findings []rules.Finding) error {
 		if color {
 			severity = colorize(f.Severity, severity)
 		}
-		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n", severity, f.RuleID, f.Resource.ID, f.Title)
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n", severity, f.RuleID, sanitizeCell(f.Resource.ID), f.Title)
 	}
 	return tw.Flush()
+}
+
+// sanitizeCell makes an AWS-returned string safe to print as one table
+// cell. RuleID and Title are always static strings this codebase writes
+// itself; Resource.ID is the one field in this row built from whatever the
+// cloud account calls the resource -- an EC2 security group name allows a
+// much looser character set than S3 bucket names or IAM role names (see
+// the README's Security section, which already treats an embedded newline
+// in a group name as a real attack surface for the Terraform this project
+// generates). An embedded tab shifts every later column out of alignment;
+// an embedded newline does worse -- it lets the value spill onto what
+// reads as a second table row, with attacker-chosen text in the SEVERITY
+// position, indistinguishable from a real finding to someone skimming
+// scan output in a terminal or a CI log. Collapsing tabs/newlines/carriage
+// returns to a single space keeps the string, just not its ability to
+// forge table structure.
+func sanitizeCell(s string) string {
+	return strings.Map(func(r rune) rune {
+		switch r {
+		case '\t', '\n', '\r':
+			return ' '
+		}
+		return r
+	}, s)
 }
 
 // colorEnabled reports whether the SEVERITY column should be ANSI

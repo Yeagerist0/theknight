@@ -46,6 +46,45 @@ func TestWrite_Table(t *testing.T) {
 	}
 }
 
+// TestWrite_TableResourceIDWithNewlineCannotForgeARow is the regression
+// test for the gap this fix closes: a resource name (an EC2 security group
+// name, which AWS allows a much looser character set for than S3 bucket or
+// IAM role names) containing an embedded newline used to spill across the
+// column boundary, producing text that reads as a second, attacker-chosen
+// table row -- indistinguishable from a real finding to someone skimming
+// terminal or CI log output.
+func TestWrite_TableResourceIDWithNewlineCannotForgeARow(t *testing.T) {
+	forged := []rules.Finding{{
+		RuleID:   "sg-open-ingress",
+		Resource: scanner.Resource{ID: "evil\nCRITICAL\tforged-rule\tforged-resource\tFORGED TITLE", Type: "aws_security_group"},
+		Severity: rules.SeverityLow,
+		Title:    "Security group open to the internet on a sensitive port",
+	}}
+
+	var buf bytes.Buffer
+	if err := Write(&buf, "table", forged); err != nil {
+		t.Fatalf("Write() error = %v", err)
+	}
+
+	var lines []string
+	for _, l := range strings.Split(strings.TrimRight(buf.String(), "\n"), "\n") {
+		if l != "" {
+			lines = append(lines, l)
+		}
+	}
+	// Exactly the header plus the one real finding -- the embedded newline
+	// must not have produced an extra line that reads as its own row.
+	if len(lines) != 2 {
+		t.Fatalf("got %d lines, want 2 (header + one row); the embedded newline forged an extra row:\n%s", len(lines), buf.String())
+	}
+	if !strings.HasPrefix(lines[1], "low") {
+		t.Errorf("the real finding's row should still start with its real severity \"low\", got: %q", lines[1])
+	}
+	if !strings.Contains(lines[1], "evil") {
+		t.Errorf("sanitized output should still contain the resource name's real content: %s", buf.String())
+	}
+}
+
 func TestWrite_TableEmpty(t *testing.T) {
 	var buf bytes.Buffer
 	if err := Write(&buf, "table", nil); err != nil {
