@@ -8,6 +8,8 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
+	"github.com/aws/aws-sdk-go-v2/service/s3control"
+	s3controltypes "github.com/aws/aws-sdk-go-v2/service/s3control/types"
 	smithy "github.com/aws/smithy-go"
 )
 
@@ -82,6 +84,32 @@ func (f *fakeS3) GetPublicAccessBlock(ctx context.Context, params *s3.GetPublicA
 	}}, nil
 }
 
+// fakeS3Control simulates the account-level Block Public Access API.
+// blockEnabled nil means "no account-level config" (NoSuchPublicAccessBlockConfiguration),
+// matching an account that never set one -- the common case this fake
+// defaults to so existing tests, which only care about bucket-level
+// behavior, don't need to know this API exists.
+type fakeS3Control struct {
+	blockEnabled *bool // nil = not configured
+	err          error
+}
+
+func (f *fakeS3Control) GetPublicAccessBlock(ctx context.Context, params *s3control.GetPublicAccessBlockInput, optFns ...func(*s3control.Options)) (*s3control.GetPublicAccessBlockOutput, error) {
+	if f.err != nil {
+		return nil, f.err
+	}
+	if f.blockEnabled == nil {
+		return nil, fakeAPIError{code: "NoSuchPublicAccessBlockConfiguration"}
+	}
+	enabled := *f.blockEnabled
+	return &s3control.GetPublicAccessBlockOutput{PublicAccessBlockConfiguration: &s3controltypes.PublicAccessBlockConfiguration{
+		BlockPublicAcls:       aws.Bool(enabled),
+		BlockPublicPolicy:     aws.Bool(enabled),
+		IgnorePublicAcls:      aws.Bool(enabled),
+		RestrictPublicBuckets: aws.Bool(enabled),
+	}}, nil
+}
+
 func TestDiscoverS3_PublicViaACL(t *testing.T) {
 	fake := &fakeS3{
 		buckets: []types.Bucket{{Name: aws.String("public-bucket")}},
@@ -92,7 +120,7 @@ func TestDiscoverS3_PublicViaACL(t *testing.T) {
 		},
 	}
 
-	resources, err := discoverS3(context.Background(), fake)
+	resources, err := discoverS3(context.Background(), fake, &fakeS3Control{}, "")
 	if err != nil {
 		t.Fatalf("discoverS3() error = %v", err)
 	}
@@ -112,6 +140,64 @@ func TestDiscoverS3_PublicViaACL(t *testing.T) {
 	}
 }
 
+// TestDiscoverS3_AccountLevelBlockSuppressesBucketACL is the regression test
+// for the bug this fix closes: a bucket with no bucket-level Block Public
+// Access configuration of its own, but a public ACL, sitting under an
+// account that has account-level Block Public Access fully enabled. AWS
+// enforces the union of the two, so this bucket's ACL grant is inert — the
+// scanner must not report it as a live public-read finding.
+func TestDiscoverS3_AccountLevelBlockSuppressesBucketACL(t *testing.T) {
+	fake := &fakeS3{
+		buckets: []types.Bucket{{Name: aws.String("bucket-under-account-block")}},
+		grants: map[string][]types.Grant{
+			"bucket-under-account-block": {
+				{Grantee: &types.Grantee{URI: aws.String(granteeAllUsers)}, Permission: types.PermissionRead},
+			},
+		},
+		// No entry in blockEnabled: this bucket has no PAB config of its own.
+	}
+	enabled := true
+	fakeControl := &fakeS3Control{blockEnabled: &enabled}
+
+	resources, err := discoverS3(context.Background(), fake, fakeControl, "111111111111")
+	if err != nil {
+		t.Fatalf("discoverS3() error = %v", err)
+	}
+	r := resources[0]
+	if got := r.Metadata["acl_public_read"]; got != true {
+		t.Errorf("acl_public_read = %v, want true (the ACL itself is still public)", got)
+	}
+	if got := r.Metadata["public_access_block_enabled"]; got != true {
+		t.Errorf("public_access_block_enabled = %v, want true (account-level block covers this bucket)", got)
+	}
+}
+
+// TestDiscoverS3_PartialAccountBlockDoesNotSuppress checks the merge is
+// per-dimension, not "either source fully blocks": an account missing even
+// one of the four Block Public Access flags must not suppress a bucket that
+// has none of its own -- AWS requires all four, from either source, before
+// public access is actually inert.
+func TestDiscoverS3_PartialAccountBlockDoesNotSuppress(t *testing.T) {
+	fake := &fakeS3{
+		buckets: []types.Bucket{{Name: aws.String("bucket-under-partial-block")}},
+		grants: map[string][]types.Grant{
+			"bucket-under-partial-block": {
+				{Grantee: &types.Grantee{URI: aws.String(granteeAllUsers)}, Permission: types.PermissionRead},
+			},
+		},
+	}
+	fakeControl := &fakeS3Control{} // not configured at all -> every dimension false
+
+	resources, err := discoverS3(context.Background(), fake, fakeControl, "111111111111")
+	if err != nil {
+		t.Fatalf("discoverS3() error = %v", err)
+	}
+	r := resources[0]
+	if got := r.Metadata["public_access_block_enabled"]; got != false {
+		t.Errorf("public_access_block_enabled = %v, want false (account has no PAB config either)", got)
+	}
+}
+
 func TestDiscoverS3_PrivateBucket(t *testing.T) {
 	fake := &fakeS3{
 		buckets:      []types.Bucket{{Name: aws.String("private-bucket")}},
@@ -119,7 +205,7 @@ func TestDiscoverS3_PrivateBucket(t *testing.T) {
 		blockEnabled: map[string]bool{"private-bucket": true},
 	}
 
-	resources, err := discoverS3(context.Background(), fake)
+	resources, err := discoverS3(context.Background(), fake, &fakeS3Control{}, "")
 	if err != nil {
 		t.Fatalf("discoverS3() error = %v", err)
 	}
@@ -146,7 +232,7 @@ func TestDiscoverS3_PolicyGrantsReadOnly(t *testing.T) {
 		blockEnabled: map[string]bool{"read-only-policy-bucket": false},
 	}
 
-	resources, err := discoverS3(context.Background(), fake)
+	resources, err := discoverS3(context.Background(), fake, &fakeS3Control{}, "")
 	if err != nil {
 		t.Fatalf("discoverS3() error = %v", err)
 	}
@@ -170,7 +256,7 @@ func TestDiscoverS3_PolicyGrantsWriteOnly(t *testing.T) {
 		blockEnabled: map[string]bool{"write-only-policy-bucket": false},
 	}
 
-	resources, err := discoverS3(context.Background(), fake)
+	resources, err := discoverS3(context.Background(), fake, &fakeS3Control{}, "")
 	if err != nil {
 		t.Fatalf("discoverS3() error = %v", err)
 	}
@@ -194,7 +280,7 @@ func TestDiscoverS3_PolicyGrantsFullAccess(t *testing.T) {
 		blockEnabled: map[string]bool{"full-access-policy-bucket": false},
 	}
 
-	resources, err := discoverS3(context.Background(), fake)
+	resources, err := discoverS3(context.Background(), fake, &fakeS3Control{}, "")
 	if err != nil {
 		t.Fatalf("discoverS3() error = %v", err)
 	}
@@ -216,7 +302,7 @@ func TestDiscoverS3_PolicyDocumentUnreadableFallsBackConservatively(t *testing.T
 		blockEnabled: map[string]bool{"unreadable-policy-bucket": false},
 	}
 
-	resources, err := discoverS3(context.Background(), fake)
+	resources, err := discoverS3(context.Background(), fake, &fakeS3Control{}, "")
 	if err == nil {
 		t.Fatal("discoverS3() error = nil, want non-nil (the policy document call failed)")
 	}
@@ -238,7 +324,7 @@ func TestDiscoverS3_PartialFailureStillReportsBucket(t *testing.T) {
 		blockEnabled: map[string]bool{"broken-bucket": true},
 	}
 
-	resources, err := discoverS3(context.Background(), fake)
+	resources, err := discoverS3(context.Background(), fake, &fakeS3Control{}, "")
 	if err == nil {
 		t.Fatal("discoverS3() error = nil, want non-nil (the ACL call failed)")
 	}

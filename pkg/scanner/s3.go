@@ -11,6 +11,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
+	"github.com/aws/aws-sdk-go-v2/service/s3control"
 	smithy "github.com/aws/smithy-go"
 )
 
@@ -25,12 +26,20 @@ type s3API interface {
 	GetPublicAccessBlock(ctx context.Context, params *s3.GetPublicAccessBlockInput, optFns ...func(*s3.Options)) (*s3.GetPublicAccessBlockOutput, error)
 }
 
+// s3ControlAPI is the subset of *s3control.Client discoverS3 needs to read
+// the ACCOUNT-level Block Public Access configuration -- a separate setting
+// from the per-bucket one s3API.GetPublicAccessBlock returns, and the one
+// AWS recommends organizations set once instead of per bucket.
+type s3ControlAPI interface {
+	GetPublicAccessBlock(ctx context.Context, params *s3control.GetPublicAccessBlockInput, optFns ...func(*s3control.Options)) (*s3control.GetPublicAccessBlockOutput, error)
+}
+
 const (
 	granteeAllUsers           = "http://acs.amazonaws.com/groups/global/AllUsers"
 	granteeAuthenticatedUsers = "http://acs.amazonaws.com/groups/global/AuthenticatedUsers"
 )
 
-func discoverS3(ctx context.Context, api s3API) ([]Resource, error) {
+func discoverS3(ctx context.Context, api s3API, s3c s3ControlAPI, accountID string) ([]Resource, error) {
 	out, err := api.ListBuckets(ctx, &s3.ListBucketsInput{})
 	if err != nil {
 		return nil, fmt.Errorf("listing buckets: %w", err)
@@ -40,6 +49,20 @@ func discoverS3(ctx context.Context, api s3API) ([]Resource, error) {
 		resources []Resource
 		errs      []error
 	)
+
+	// Account-level Block Public Access applies to every bucket in the
+	// account and is resolved once here, not per bucket: AWS merges it with
+	// each bucket's own configuration flag-by-flag (whichever side blocks a
+	// given dimension wins), so a bucket with no PAB config of its own can
+	// still be fully blocked by an account-wide setting -- a common,
+	// AWS-recommended pattern. Reading only the per-bucket API (as this
+	// scanner used to) means such a bucket's ACL/policy signals would be
+	// reported as a live public-access finding even though nothing is
+	// actually reachable.
+	acctBlock, err := accountPublicAccessBlock(ctx, s3c, accountID)
+	if err != nil {
+		errs = append(errs, fmt.Errorf("account public access block: %w", err))
+	}
 
 	for _, b := range out.Buckets {
 		name := aws.ToString(b.Name)
@@ -99,11 +122,11 @@ func discoverS3(ctx context.Context, api s3API) ([]Resource, error) {
 			metadata["policy_public_write"] = policyPublicWrite
 		}
 
-		blocked, err := publicAccessBlockEnabled(ctx, api, name)
+		bucketBlock, err := bucketPublicAccessBlock(ctx, api, name)
 		if err != nil {
 			errs = append(errs, fmt.Errorf("bucket %s: public access block: %w", name, err))
 		} else {
-			metadata["public_access_block_enabled"] = blocked
+			metadata["public_access_block_enabled"] = bucketBlock.merge(acctBlock).fullyBlocked()
 		}
 
 		resources = append(resources, Resource{
@@ -277,24 +300,88 @@ func s3ActionGrantsWrite(action string) bool {
 	return false
 }
 
-func publicAccessBlockEnabled(ctx context.Context, api s3API, name string) (bool, error) {
+// publicAccessBlockConfig is the four independent Block Public Access
+// dimensions, read from either the bucket-level or account-level API. AWS
+// evaluates each dimension separately and takes whichever source (bucket or
+// account) sets it, so this is kept as four bools rather than collapsed
+// into one until both sources are merged -- see merge.
+type publicAccessBlockConfig struct {
+	blockACLs       bool
+	ignoreACLs      bool
+	blockPolicy     bool
+	restrictBuckets bool
+}
+
+// merge combines this config with another (bucket merged with account, in
+// either order), taking true from whichever side sets each dimension —
+// AWS's own "most restrictive wins, per flag" semantics.
+func (c publicAccessBlockConfig) merge(o publicAccessBlockConfig) publicAccessBlockConfig {
+	return publicAccessBlockConfig{
+		blockACLs:       c.blockACLs || o.blockACLs,
+		ignoreACLs:      c.ignoreACLs || o.ignoreACLs,
+		blockPolicy:     c.blockPolicy || o.blockPolicy,
+		restrictBuckets: c.restrictBuckets || o.restrictBuckets,
+	}
+}
+
+// fullyBlocked reports whether every dimension is set -- the bar the
+// public-read/public-write rules require before they'll suppress a finding
+// based on an ACL or policy grant that's actually been rendered inert.
+func (c publicAccessBlockConfig) fullyBlocked() bool {
+	return c.blockACLs && c.ignoreACLs && c.blockPolicy && c.restrictBuckets
+}
+
+func bucketPublicAccessBlock(ctx context.Context, api s3API, name string) (publicAccessBlockConfig, error) {
 	out, err := api.GetPublicAccessBlock(ctx, &s3.GetPublicAccessBlockInput{Bucket: &name})
 	if err != nil {
 		if isAWSErrorCode(err, "NoSuchPublicAccessBlockConfiguration") {
-			return false, nil
+			return publicAccessBlockConfig{}, nil
 		}
-		return false, err
+		return publicAccessBlockConfig{}, err
 	}
 
 	cfg := out.PublicAccessBlockConfiguration
 	if cfg == nil {
-		return false, nil
+		return publicAccessBlockConfig{}, nil
 	}
 
-	return aws.ToBool(cfg.BlockPublicAcls) &&
-		aws.ToBool(cfg.BlockPublicPolicy) &&
-		aws.ToBool(cfg.IgnorePublicAcls) &&
-		aws.ToBool(cfg.RestrictPublicBuckets), nil
+	return publicAccessBlockConfig{
+		blockACLs:       aws.ToBool(cfg.BlockPublicAcls),
+		ignoreACLs:      aws.ToBool(cfg.IgnorePublicAcls),
+		blockPolicy:     aws.ToBool(cfg.BlockPublicPolicy),
+		restrictBuckets: aws.ToBool(cfg.RestrictPublicBuckets),
+	}, nil
+}
+
+// accountPublicAccessBlock reads the AWS-account-wide Block Public Access
+// configuration via S3 Control. A missing configuration (no error here,
+// AWS's normal state for an account that never set one) reads the same way
+// a missing bucket-level configuration does: every dimension false, the
+// conservative default for a security scanner.
+func accountPublicAccessBlock(ctx context.Context, s3c s3ControlAPI, accountID string) (publicAccessBlockConfig, error) {
+	if accountID == "" {
+		return publicAccessBlockConfig{}, nil
+	}
+
+	out, err := s3c.GetPublicAccessBlock(ctx, &s3control.GetPublicAccessBlockInput{AccountId: &accountID})
+	if err != nil {
+		if isAWSErrorCode(err, "NoSuchPublicAccessBlockConfiguration") {
+			return publicAccessBlockConfig{}, nil
+		}
+		return publicAccessBlockConfig{}, err
+	}
+
+	cfg := out.PublicAccessBlockConfiguration
+	if cfg == nil {
+		return publicAccessBlockConfig{}, nil
+	}
+
+	return publicAccessBlockConfig{
+		blockACLs:       aws.ToBool(cfg.BlockPublicAcls),
+		ignoreACLs:      aws.ToBool(cfg.IgnorePublicAcls),
+		blockPolicy:     aws.ToBool(cfg.BlockPublicPolicy),
+		restrictBuckets: aws.ToBool(cfg.RestrictPublicBuckets),
+	}, nil
 }
 
 func isAWSErrorCode(err error, code string) bool {
