@@ -154,13 +154,24 @@ func (c *Client) CreatePR(ctx context.Context, owner, repo, baseBranch string, f
 // in before the extension; the first occurrence keeps its plain path so
 // the common, non-colliding case is unaffected.
 func dedupePaths(fixes []FileFix) []FileFix {
-	seen := make(map[string]int, len(fixes))
+	reserved := make(map[string]bool, len(fixes))
+	for _, f := range fixes {
+		reserved[f.Path] = true
+	}
+	used := make(map[string]bool, len(fixes))
 	out := make([]FileFix, len(fixes))
 	for i, f := range fixes {
-		seen[f.Path]++
-		if n := seen[f.Path]; n > 1 {
-			f.Path = uniquifyPath(f.Path, n)
+		base := f.Path
+		if used[base] {
+			for n := 2; ; n++ {
+				candidate := uniquifyPath(base, n)
+				if !used[candidate] && !reserved[candidate] {
+					f.Path = candidate
+					break
+				}
+			}
 		}
+		used[f.Path] = true
 		out[i] = f
 	}
 	return out

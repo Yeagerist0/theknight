@@ -328,6 +328,18 @@ func TestDedupePaths_CollidingResourceNamesGetDistinctPaths(t *testing.T) {
 	}
 }
 
+func TestDedupePaths_SkipsExistingSuffixes(t *testing.T) {
+	mk := func(path string) FileFix { return FileFix{Path: path} }
+	in := []FileFix{mk("fix.tf"), mk("fix.tf"), mk("fix-2.tf")}
+	out := dedupePaths(in)
+	want := []string{"fix.tf", "fix-3.tf", "fix-2.tf"}
+	for i, path := range want {
+		if out[i].Path != path {
+			t.Errorf("entry %d path = %q, want %q", i, out[i].Path, path)
+		}
+	}
+}
+
 func briefedFix(briefing string) FileFix {
 	f := rules.Finding{RuleID: "sg-open-ingress", Severity: rules.SeverityCritical, Resource: scanner.Resource{ID: "sg-0a1b2c3d4e5f60718", Type: "aws_security_group"}}
 	return FileFix{Path: "fixes/sg.tf", Fix: remediate.Fix{Finding: f, Explanation: "template"}, Briefing: briefing}
