@@ -86,6 +86,62 @@ func TestDiscoverIAM_WildcardActionViaInlinePolicy(t *testing.T) {
 	}
 }
 
+// TestDiscoverIAM_NotActionGrantsEverythingExceptAFewIsDetected is the
+// regression test for the gap this fix closes: a statement using NotAction
+// grants every action EXCEPT the ones listed -- "almost all of IAM" behind
+// what reads as a short, restrictive-looking exclusion list. A check that
+// only looked for a literal Action: "*" gave this a clean bill of health.
+func TestDiscoverIAM_NotActionGrantsEverythingExceptAFewIsDetected(t *testing.T) {
+	fake := &fakeIAM{
+		roles: []types.Role{
+			{RoleName: aws.String("almost-admin"), Arn: aws.String("arn:aws:iam::123456789012:role/almost-admin")},
+		},
+		inlinePolicies: map[string]map[string]string{
+			"almost-admin": {
+				"EverythingExceptIAM": `{"Version":"2012-10-17","Statement":[{"Effect":"Allow","NotAction":["iam:*","organizations:*"],"Resource":"*"}]}`,
+			},
+		},
+	}
+
+	resources, err := discoverIAM(context.Background(), fake)
+	if err != nil {
+		t.Fatalf("discoverIAM() error = %v", err)
+	}
+	r := resources[0]
+	if got := r.Metadata["has_wildcard_action"]; got != true {
+		t.Errorf("has_wildcard_action = %v, want true (NotAction grants everything except a short list)", got)
+	}
+	policies, _ := r.Metadata["action_wildcard_policies"].([]string)
+	if len(policies) != 1 || policies[0] != "EverythingExceptIAM" {
+		t.Errorf("action_wildcard_policies = %v, want [EverythingExceptIAM]", policies)
+	}
+}
+
+// TestDiscoverIAM_NotResourceGrantsEverythingExceptAFewIsDetected is the
+// same gap for resources: NotResource grants access to every resource
+// except the ones listed.
+func TestDiscoverIAM_NotResourceGrantsEverythingExceptAFewIsDetected(t *testing.T) {
+	fake := &fakeIAM{
+		roles: []types.Role{
+			{RoleName: aws.String("almost-everything"), Arn: aws.String("arn:aws:iam::123456789012:role/almost-everything")},
+		},
+		inlinePolicies: map[string]map[string]string{
+			"almost-everything": {
+				"ExceptOneBucket": `{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"s3:*","NotResource":["arn:aws:s3:::one-excluded-bucket/*"]}]}`,
+			},
+		},
+	}
+
+	resources, err := discoverIAM(context.Background(), fake)
+	if err != nil {
+		t.Fatalf("discoverIAM() error = %v", err)
+	}
+	r := resources[0]
+	if got := r.Metadata["has_wildcard_resource"]; got != true {
+		t.Errorf("has_wildcard_resource = %v, want true (NotResource grants every resource except a short list)", got)
+	}
+}
+
 func TestDiscoverIAM_WildcardActionViaAttachedPolicy(t *testing.T) {
 	arn := "arn:aws:iam::123456789012:policy/AdminAccess"
 	fake := &fakeIAM{
