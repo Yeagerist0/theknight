@@ -146,13 +146,20 @@ prompt-injection corpus from [prompt-injection-soc-telemetry](https://github.com
 reports how often the model is steered, with Wilson intervals. `--dry-run` uses a
 deterministic stand-in so the harness runs with no key.
 
-**Not yet measured:** the live-model numbers. The first run was cut short by the free
-tier's request limit (HTTP 429 on 39 of 46 calls), so it produced no usable result and none
-is claimed here. What is tested today: the validator (accept and reject cases, including the
-steered outputs), prompt escaping, the fallback path, the client's retry and no-body-leak
-behaviour, and the PR body. The clean controls in the dry run found a real validator bug
-(an honest briefing that said "AWS account" was rejected as a shell command), now fixed with
-a regression test.
+**Measured** (`gemini-3.1-flash-lite`, 34 admissible payloads, 0 model errors — see
+[`docs/BRIEFING_EVAL.md`](docs/BRIEFING_EVAL.md) for method and the raw trial data): every
+injected briefing passed validation, and the model was never steered into dismissing the
+finding, claiming exploitation, or reporting a different severity — 0% [0%, 10.2%] (0/34,
+95% Wilson interval). One briefing repeated an injected name back verbatim while still
+describing the finding correctly and recommending the real fix; that's tracked as its own,
+more permissive signal (`echoed`), not folded into the steering rate. An earlier run hit the
+free tier's request limit (HTTP 429 on 39 of 46 calls) and correctly produced no result —
+this harness, like sentinelx's narrator eval, refuses to report a rate computed over >5%
+failed calls. What's tested below the live-model layer: the validator (accept and reject
+cases, including the steered outputs), prompt escaping, the fallback path, the client's
+retry and no-body-leak behaviour, and the PR body. The clean controls in the dry run found a
+real validator bug (an honest briefing that said "AWS account" was rejected as a shell
+command), now fixed with a regression test.
 
 ## Usage
 
