@@ -38,6 +38,14 @@ func newRemediateCmd() *cobra.Command {
 					return err
 				}
 			}
+			var minSeverity rules.Severity
+			if severity != "" {
+				var err error
+				minSeverity, err = rules.ParseSeverity(severity)
+				if err != nil {
+					return err
+				}
+			}
 
 			client, err := awsclient.New(ctx, profile, region)
 			if err != nil {
@@ -54,12 +62,8 @@ func newRemediateCmd() *cobra.Command {
 
 			findings := rules.Evaluate(resources)
 
-			if severity != "" {
-				min, err := rules.ParseSeverity(severity)
-				if err != nil {
-					return err
-				}
-				findings = rules.Filter(findings, min)
+			if minSeverity != "" {
+				findings = rules.Filter(findings, minSeverity)
 			}
 
 			if len(findings) == 0 {
