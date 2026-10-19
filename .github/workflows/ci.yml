@@ -21,14 +21,8 @@ jobs:
           cache: true
 
       - run: go build ./...
-      - run: go vet ./...
-
-      - name: gofmt
-        run: |
-          unformatted=$(gofmt -l .)
-          if [ -n "$unformatted" ]; then
-            echo "These files need gofmt:"; echo "$unformatted"; exit 1
-          fi
+      - name: lint
+        run: make lint
 
       # No AWS account and no Docker needed: every discovery, rule, and
       # remediation path is tested against hand-rolled fakes.
