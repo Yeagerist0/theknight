@@ -53,6 +53,31 @@ func TestS3PublicReadRule_Evaluate(t *testing.T) {
 			want: false,
 		},
 		{
+			name: "existing public ACL ignored by partial block",
+			metadata: map[string]any{
+				"acl_public_read":    true,
+				"public_acl_ignored": true,
+			},
+			want: false,
+		},
+		{
+			name: "existing public policy restricted by partial block",
+			metadata: map[string]any{
+				"policy_public_read":       true,
+				"public_policy_restricted": true,
+			},
+			want: false,
+		},
+		{
+			name: "live policy still reports when ACL is ignored",
+			metadata: map[string]any{
+				"acl_public_read":    true,
+				"policy_public_read": true,
+				"public_acl_ignored": true,
+			},
+			want: true,
+		},
+		{
 			name: "private bucket",
 			metadata: map[string]any{
 				"acl_public_read":             false,
@@ -109,6 +134,22 @@ func TestS3PublicWriteRule_Evaluate(t *testing.T) {
 			metadata: map[string]any{
 				"acl_public_write":            true,
 				"public_access_block_enabled": true,
+			},
+			want: false,
+		},
+		{
+			name: "existing public write ACL ignored by partial block",
+			metadata: map[string]any{
+				"acl_public_write":   true,
+				"public_acl_ignored": true,
+			},
+			want: false,
+		},
+		{
+			name: "existing public write policy restricted by partial block",
+			metadata: map[string]any{
+				"policy_public_write":      true,
+				"public_policy_restricted": true,
 			},
 			want: false,
 		},

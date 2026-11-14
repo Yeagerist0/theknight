@@ -36,6 +36,10 @@ func (s3PublicReadRule) Evaluate(r scanner.Resource) (Finding, bool) {
 
 	aclPublic, _ := r.Metadata["acl_public_read"].(bool)
 	policyPublic, _ := r.Metadata["policy_public_read"].(bool)
+	aclIgnored, _ := r.Metadata["public_acl_ignored"].(bool)
+	policyRestricted, _ := r.Metadata["public_policy_restricted"].(bool)
+	aclPublic = aclPublic && !aclIgnored
+	policyPublic = policyPublic && !policyRestricted
 	if !aclPublic && !policyPublic {
 		return Finding{}, false
 	}
@@ -50,7 +54,7 @@ func (s3PublicReadRule) Evaluate(r scanner.Resource) (Finding, bool) {
 		Resource:      r,
 		Severity:      SeverityCritical,
 		Title:         "S3 bucket allows public read access",
-		Description:   fmt.Sprintf("Bucket %q grants public read access via %s and has no Public Access Block configuration restricting it.", r.ID, via),
+		Description:   fmt.Sprintf("Bucket %q grants effective public read access via %s.", r.ID, via),
 		RemediationID: "s3-block-public-access",
 	}, true
 }
@@ -74,6 +78,10 @@ func (s3PublicWriteRule) Evaluate(r scanner.Resource) (Finding, bool) {
 
 	aclPublic, _ := r.Metadata["acl_public_write"].(bool)
 	policyPublic, _ := r.Metadata["policy_public_write"].(bool)
+	aclIgnored, _ := r.Metadata["public_acl_ignored"].(bool)
+	policyRestricted, _ := r.Metadata["public_policy_restricted"].(bool)
+	aclPublic = aclPublic && !aclIgnored
+	policyPublic = policyPublic && !policyRestricted
 	if !aclPublic && !policyPublic {
 		return Finding{}, false
 	}
@@ -88,7 +96,7 @@ func (s3PublicWriteRule) Evaluate(r scanner.Resource) (Finding, bool) {
 		Resource:      r,
 		Severity:      SeverityCritical,
 		Title:         "S3 bucket allows public write access",
-		Description:   fmt.Sprintf("Bucket %q grants public write access via %s and has no Public Access Block configuration restricting it. Anyone can upload or overwrite objects in this bucket.", r.ID, via),
+		Description:   fmt.Sprintf("Bucket %q grants effective public write access via %s. Anyone can upload or overwrite objects in this bucket.", r.ID, via),
 		RemediationID: "s3-block-public-access",
 	}, true
 }

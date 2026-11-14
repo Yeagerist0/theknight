@@ -127,9 +127,14 @@ func discoverS3(ctx context.Context, api s3API, s3c s3ControlAPI, accountID stri
 			bucketBlock, err := bucketPublicAccessBlock(ctx, api, name)
 			if err != nil {
 				errs = append(errs, fmt.Errorf("bucket %s: public access block: %w", name, err))
-			} else {
-				metadata["public_access_block_enabled"] = bucketBlock.merge(acctBlock).fullyBlocked()
 			}
+			effectiveBlock := bucketBlock.merge(acctBlock)
+			metadata["public_access_block_enabled"] = effectiveBlock.fullyBlocked()
+			// Existing grants are affected by these two flags individually.
+			// BlockPublicAcls and BlockPublicPolicy only reject new grants.
+			// A known account-level flag still applies if the bucket API fails.
+			metadata["public_acl_ignored"] = effectiveBlock.ignoreACLs
+			metadata["public_policy_restricted"] = effectiveBlock.restrictBuckets
 
 			resources = append(resources, Resource{
 				ID:       name,
@@ -327,9 +332,10 @@ func (c publicAccessBlockConfig) merge(o publicAccessBlockConfig) publicAccessBl
 	}
 }
 
-// fullyBlocked reports whether every dimension is set -- the bar the
-// public-read/public-write rules require before they'll suppress a finding
-// based on an ACL or policy grant that's actually been rendered inert.
+// fullyBlocked preserves the aggregate signal for consumers that want to
+// know whether all four prevention and enforcement settings are enabled.
+// Rules also inspect ignoreACLs and restrictBuckets independently because
+// either one can render an existing grant inert on its own.
 func (c publicAccessBlockConfig) fullyBlocked() bool {
 	return c.blockACLs && c.ignoreACLs && c.blockPolicy && c.restrictBuckets
 }
