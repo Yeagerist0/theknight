@@ -30,6 +30,7 @@ type fakeS3 struct {
 	policyPublic map[string]bool
 	policyDocs   map[string]string
 	blockEnabled map[string]bool
+	blockConfig  *types.PublicAccessBlockConfiguration
 	aclErr       error
 	policyErr    error
 	policyDocErr error
@@ -97,6 +98,9 @@ func (f *fakeS3) GetPublicAccessBlock(ctx context.Context, params *s3.GetPublicA
 	if f.blockErr != nil {
 		return nil, f.blockErr
 	}
+	if f.blockConfig != nil {
+		return &s3.GetPublicAccessBlockOutput{PublicAccessBlockConfiguration: f.blockConfig}, nil
+	}
 	enabled, ok := f.blockEnabled[aws.ToString(params.Bucket)]
 	if !ok {
 		return nil, fakeAPIError{code: "NoSuchPublicAccessBlockConfiguration"}
@@ -116,12 +120,16 @@ func (f *fakeS3) GetPublicAccessBlock(ctx context.Context, params *s3.GetPublicA
 // behavior, don't need to know this API exists.
 type fakeS3Control struct {
 	blockEnabled *bool // nil = not configured
+	blockConfig  *s3controltypes.PublicAccessBlockConfiguration
 	err          error
 }
 
 func (f *fakeS3Control) GetPublicAccessBlock(ctx context.Context, params *s3control.GetPublicAccessBlockInput, optFns ...func(*s3control.Options)) (*s3control.GetPublicAccessBlockOutput, error) {
 	if f.err != nil {
 		return nil, f.err
+	}
+	if f.blockConfig != nil {
+		return &s3control.GetPublicAccessBlockOutput{PublicAccessBlockConfiguration: f.blockConfig}, nil
 	}
 	if f.blockEnabled == nil {
 		return nil, fakeAPIError{code: "NoSuchPublicAccessBlockConfiguration"}
@@ -197,11 +205,9 @@ func TestDiscoverS3_AccountLevelBlockSuppressesBucketACL(t *testing.T) {
 	}
 }
 
-// TestDiscoverS3_PartialAccountBlockDoesNotSuppress checks the merge is
-// per-dimension, not "either source fully blocks": an account missing even
-// one of the four Block Public Access flags must not suppress a bucket that
-// has none of its own -- AWS requires all four, from either source, before
-// public access is actually inert.
+// BlockPublicAcls prevents new public ACLs but does not neutralize an
+// existing grant. The scanner must not confuse that prevention flag with
+// IgnorePublicAcls when reporting effective access.
 func TestDiscoverS3_PartialAccountBlockDoesNotSuppress(t *testing.T) {
 	fake := &fakeS3{
 		buckets: []types.Bucket{{Name: aws.String("bucket-under-partial-block")}},
@@ -211,7 +217,9 @@ func TestDiscoverS3_PartialAccountBlockDoesNotSuppress(t *testing.T) {
 			},
 		},
 	}
-	fakeControl := &fakeS3Control{} // not configured at all -> every dimension false
+	fakeControl := &fakeS3Control{
+		blockConfig: &s3controltypes.PublicAccessBlockConfiguration{BlockPublicAcls: aws.Bool(true)},
+	}
 
 	resources, err := discoverS3(context.Background(), fake, fakeControl, "111111111111")
 	if err != nil {
@@ -219,7 +227,52 @@ func TestDiscoverS3_PartialAccountBlockDoesNotSuppress(t *testing.T) {
 	}
 	r := resources[0]
 	if got := r.Metadata["public_access_block_enabled"]; got != false {
-		t.Errorf("public_access_block_enabled = %v, want false (account has no PAB config either)", got)
+		t.Errorf("public_access_block_enabled = %v, want false (only future ACLs are blocked)", got)
+	}
+	if r.Metadata["public_acl_ignored"] != false || r.Metadata["public_policy_restricted"] != false {
+		t.Errorf("prevention-only block was treated as suppressing existing grants: %v", r.Metadata)
+	}
+}
+
+func TestDiscoverS3_MergesEffectivePartialBlockFlags(t *testing.T) {
+	fake := &fakeS3{
+		buckets: []types.Bucket{{Name: aws.String("partial-block-bucket")}},
+		grants: map[string][]types.Grant{
+			"partial-block-bucket": {
+				{Grantee: &types.Grantee{URI: aws.String(granteeAllUsers)}, Permission: types.PermissionRead},
+			},
+		},
+		blockConfig: &types.PublicAccessBlockConfiguration{IgnorePublicAcls: aws.Bool(true)},
+	}
+	fakeControl := &fakeS3Control{
+		blockConfig: &s3controltypes.PublicAccessBlockConfiguration{RestrictPublicBuckets: aws.Bool(true)},
+	}
+
+	resources, err := discoverS3(context.Background(), fake, fakeControl, "111111111111")
+	if err != nil {
+		t.Fatalf("discoverS3() error = %v", err)
+	}
+	metadata := resources[0].Metadata
+	if metadata["public_access_block_enabled"] != false || metadata["public_acl_ignored"] != true || metadata["public_policy_restricted"] != true {
+		t.Fatalf("effective partial block metadata = %v", metadata)
+	}
+}
+
+func TestDiscoverS3_UsesKnownAccountBlockWhenBucketLookupFails(t *testing.T) {
+	fake := &fakeS3{
+		buckets:  []types.Bucket{{Name: aws.String("bucket-with-denied-block-read")}},
+		blockErr: errors.New("access denied"),
+	}
+	fakeControl := &fakeS3Control{
+		blockConfig: &s3controltypes.PublicAccessBlockConfiguration{IgnorePublicAcls: aws.Bool(true)},
+	}
+
+	resources, err := discoverS3(context.Background(), fake, fakeControl, "111111111111")
+	if err == nil {
+		t.Fatal("expected bucket public access block lookup error")
+	}
+	if got := resources[0].Metadata["public_acl_ignored"]; got != true {
+		t.Fatalf("public_acl_ignored = %v, want true from account-level setting", got)
 	}
 }
 
